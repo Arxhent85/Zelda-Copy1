@@ -1,0 +1,6 @@
+{
+  "name": "Hyrule Realms 3D - Fantasy Open World Adventure",
+  "description": "An open-world 3D fantasy adventure game in Three.js with procedural terrain, weather, combat, climbing, gliding, dungeons, and cross-platform touch controls.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
