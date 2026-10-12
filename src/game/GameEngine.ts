@@ -320,6 +320,10 @@ export class GameEngine {
       this.mountSystem,
       this.wildlifeManager
     );
+
+    this.editorManager.onObstaclesChanged = () => {
+      this.refreshStaticObstacles();
+    };
   }
 
   public toggleEditor(active?: boolean): boolean {
@@ -372,19 +376,11 @@ export class GameEngine {
       this.collectibleManager.spawnRupee(pos.x, pos.y + 0.5, pos.z, amount);
     };
 
-    // Register Static Obstacle Colliders (Trees, Rocks, Ruins, Shrines, Chests, Ore Nodes, Buildings, Mounts)
-    this.physics.staticObstacles = [
-      ...this.foliageManager.obstacles,
-      ...this.collectibleManager.getObstacles(),
-      ...this.miningSystem.obstacles,
-      ...this.buildingSystem.obstacles,
-      ...this.mountSystem.obstacles,
-    ];
-
     // Clear grass underneath all built structures
     this.buildingSystem.onStructurePlaced = (pos, type) => {
       const radius = type === 'catan_city' ? 5.2 : type === 'catan_settlement' ? 4.2 : 2.5;
       this.foliageManager.removeGrassInRadius(pos.x, pos.z, radius);
+      this.refreshStaticObstacles();
     };
 
     for (const struct of this.buildingSystem.structures) {
@@ -392,6 +388,19 @@ export class GameEngine {
       const radius = struct.data.type === 'catan_city' ? 5.2 : struct.data.type === 'catan_settlement' ? 4.2 : 2.5;
       this.foliageManager.removeGrassInRadius(p.x, p.z, radius);
     }
+
+    // Register Static Obstacle Colliders (Trees, Rocks, Ruins, Shrines, Chests, Ore Nodes, Buildings, Mounts)
+    this.refreshStaticObstacles();
+  }
+
+  public refreshStaticObstacles() {
+    this.physics.staticObstacles = [
+      ...this.foliageManager.obstacles,
+      ...this.collectibleManager.getObstacles(),
+      ...this.miningSystem.obstacles,
+      ...this.buildingSystem.obstacles,
+      ...this.mountSystem.obstacles,
+    ];
   }
 
   public resize(width: number, height: number) {

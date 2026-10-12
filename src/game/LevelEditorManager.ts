@@ -57,6 +57,7 @@ export class LevelEditorManager {
   public lastBuiltRoadSegmentIds: string[] = [];
   public roadPreviewGroup: THREE.Group = new THREE.Group();
   public onRoadPathUpdated?: (info: { pointCount: number; lengthMeters: number; estimatedSegments: number }) => void;
+  public onObstaclesChanged?: () => void;
 
   // 3D Brush Marker
   public brushMarker: THREE.Group = new THREE.Group();
@@ -705,6 +706,9 @@ export class LevelEditorManager {
     const tex = new THREE.CanvasTexture(canvas);
     tex.wrapS = THREE.RepeatWrapping;
     tex.wrapT = THREE.RepeatWrapping;
+    tex.repeat.set(1, 1);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.needsUpdate = true;
     return tex;
   }
 
@@ -801,13 +805,13 @@ export class LevelEditorManager {
         roadIndices.push(baseA + 0, baseB + 0, baseB + 1);
         roadIndices.push(baseA + 0, baseB + 1, baseA + 1);
 
-        // Quad 1: Left Driving Lane
-        roadIndices.push(baseA + 1, baseB + 1, baseB + 2);
-        roadIndices.push(baseA + 1, baseB + 2, baseA + 2);
+        // Quad 1: Left Driving Lane (pointing UP +Y)
+        roadIndices.push(baseA + 1, baseA + 2, baseB + 2);
+        roadIndices.push(baseA + 1, baseB + 2, baseB + 1);
 
-        // Quad 2: Right Driving Lane
-        roadIndices.push(baseA + 2, baseB + 2, baseB + 3);
-        roadIndices.push(baseA + 2, baseB + 3, baseA + 3);
+        // Quad 2: Right Driving Lane (pointing UP +Y)
+        roadIndices.push(baseA + 2, baseA + 3, baseB + 3);
+        roadIndices.push(baseA + 2, baseB + 3, baseB + 2);
 
         // Quad 3: Right Skirt
         roadIndices.push(baseA + 3, baseB + 3, baseB + 4);
@@ -853,25 +857,28 @@ export class LevelEditorManager {
           wallIndices.push(wBaseIdx + 6, wBaseB + 7, wBaseIdx + 7);
         }
 
-        // Solid Physics Colliders along wall perimeter every ~2.0m
-        if (isSolidWall && i % 2 === 0) {
+        // Solid Physics Colliders along wall perimeter every SINGLE slice (airtight wall coverage)
+        if (isSolidWall) {
+          const centerL = posL.clone().addScaledVector(norm, -wallThick * 0.5);
           this.buildingSystem.obstacles.push({
             id: `${roadGroupId}_wl_${i}`,
             type: 'prop',
-            x: posL.x,
-            z: posL.z,
-            yBase: yL,
-            height: wallH + 0.2,
-            radius: 0.55,
+            x: centerL.x,
+            z: centerL.z,
+            yBase: yL - 0.2,
+            height: wallH + 0.45,
+            radius: 0.75,
           });
+
+          const centerR = posR.clone().addScaledVector(norm, wallThick * 0.5);
           this.buildingSystem.obstacles.push({
             id: `${roadGroupId}_wr_${i}`,
             type: 'prop',
-            x: posR.x,
-            z: posR.z,
-            yBase: yR,
-            height: wallH + 0.2,
-            radius: 0.55,
+            x: centerR.x,
+            z: centerR.z,
+            yBase: yR - 0.2,
+            height: wallH + 0.45,
+            radius: 0.75,
           });
         }
       }
@@ -885,10 +892,23 @@ export class LevelEditorManager {
     roadGeo.computeVertexNormals();
 
     const roadTex = this.createRoadTexture(this.roadPlannerMaterial);
+    const matConfigs: Record<string, { color: number; roughness: number; metalness: number; emissive?: number; emissiveIntensity?: number }> = {
+      asphalt: { color: 0x334155, roughness: 0.8, metalness: 0.1 },
+      cobblestone: { color: 0x94a3b8, roughness: 0.88, metalness: 0.05 },
+      wood: { color: 0x92400e, roughness: 0.75, metalness: 0.05 },
+      dirt: { color: 0xb45309, roughness: 0.95, metalness: 0.02 },
+      sheikah_neon: { color: 0x0f172a, roughness: 0.25, metalness: 0.4, emissive: 0x00f0ff, emissiveIntensity: 0.6 },
+    };
+    const cfg = matConfigs[this.roadPlannerMaterial] || matConfigs.asphalt;
+
     const roadMat = new THREE.MeshStandardMaterial({
       map: roadTex,
-      roughness: this.roadPlannerMaterial === 'sheikah_neon' ? 0.35 : 0.85,
-      metalness: this.roadPlannerMaterial === 'sheikah_neon' ? 0.4 : 0.05,
+      color: cfg.color,
+      roughness: cfg.roughness,
+      metalness: cfg.metalness,
+      emissive: cfg.emissive || 0x000000,
+      emissiveIntensity: cfg.emissiveIntensity || 0,
+      side: THREE.DoubleSide,
     });
     const roadMesh = new THREE.Mesh(roadGeo, roadMat);
     roadMesh.receiveShadow = true;
@@ -904,13 +924,13 @@ export class LevelEditorManager {
 
       let wallMat: THREE.Material;
       if (wallType === 'curbs_only') {
-        wallMat = new THREE.MeshStandardMaterial({ color: 0xef4444, roughness: 0.6 });
+        wallMat = new THREE.MeshStandardMaterial({ color: 0xef4444, roughness: 0.6, side: THREE.DoubleSide });
       } else if (wallType === 'racing_wall') {
-        wallMat = new THREE.MeshStandardMaterial({ color: 0xe2e8f0, roughness: 0.4, metalness: 0.2 });
+        wallMat = new THREE.MeshStandardMaterial({ color: 0xe2e8f0, roughness: 0.4, metalness: 0.2, side: THREE.DoubleSide });
       } else if (wallType === 'stone_wall') {
-        wallMat = new THREE.MeshStandardMaterial({ color: 0x64748b, roughness: 0.9 });
+        wallMat = new THREE.MeshStandardMaterial({ color: 0x64748b, roughness: 0.9, side: THREE.DoubleSide });
       } else {
-        wallMat = new THREE.MeshStandardMaterial({ color: 0x78350f, roughness: 0.8 });
+        wallMat = new THREE.MeshStandardMaterial({ color: 0x78350f, roughness: 0.8, side: THREE.DoubleSide });
       }
 
       const wallMesh = new THREE.Mesh(wallGeo, wallMat);
@@ -971,6 +991,9 @@ export class LevelEditorManager {
       mesh: roadGroup,
     });
 
+    // Notify physics engine of new airtight wall barriers
+    this.onObstaclesChanged?.();
+
     // Audio Fanfare & Path Reset
     audioEngine.playShrineFanfare();
     this.clearPlannedPath();
@@ -1026,6 +1049,7 @@ export class LevelEditorManager {
 
     this.lastBuiltRoadSegmentIds = [];
     audioEngine.playMenuSelect();
+    this.onObstaclesChanged?.();
 
     return { success: true, message: `↩️ ${count} Straßensegmente erfolgreich rückgängig gemacht!` };
   }
@@ -1143,6 +1167,7 @@ export class LevelEditorManager {
       mesh: newMesh || undefined,
     });
 
+    this.onObstaclesChanged?.();
     audioEngine.playPlaceStructure();
     return `Platziert: ${objType}`;
   }
@@ -1190,6 +1215,7 @@ export class LevelEditorManager {
     }
 
     if (erasedCount > 0) {
+      this.onObstaclesChanged?.();
       audioEngine.playSwordHit();
       return `${erasedCount} Elemente gelöscht!`;
     }
