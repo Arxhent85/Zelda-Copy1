@@ -72,7 +72,7 @@ export const LevelEditorUI: React.FC<LevelEditorUIProps> = ({
   // Camera Views & Zoom State
   const [editorViewMode, setEditorViewMode] = useState<'3d' | 'topdown' | 'isometric'>(engine.cameraControls.editorViewMode || '3d');
   const [currentZoom, setCurrentZoom] = useState<number>(Math.round(engine.cameraControls.distance));
-  const [objectCategory, setObjectCategory] = useState<'roads' | 'nature' | 'creatures' | 'buildings'>('roads');
+  const [objectCategory, setObjectCategory] = useState<'roads' | 'vehicles' | 'nature' | 'creatures' | 'buildings'>('vehicles');
 
   const handleViewModeChange = (mode: '3d' | 'topdown' | 'isometric') => {
     setEditorViewMode(mode);
@@ -764,6 +764,16 @@ export const LevelEditorUI: React.FC<LevelEditorUIProps> = ({
                   {/* Sub-Category Pills */}
                   <div className="flex items-center gap-1.5 overflow-x-auto pb-1 border-b border-white/10">
                     <button
+                      onClick={() => setObjectCategory('vehicles')}
+                      className={`px-2.5 py-1 rounded-lg text-[11px] font-bold whitespace-nowrap transition ${
+                        objectCategory === 'vehicles'
+                          ? 'bg-rose-500/25 text-rose-300 border border-rose-500/40 shadow-sm'
+                          : 'bg-slate-900 text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      🏎️ Fahrzeuge
+                    </button>
+                    <button
                       onClick={() => setObjectCategory('roads')}
                       className={`px-2.5 py-1 rounded-lg text-[11px] font-bold whitespace-nowrap transition ${
                         objectCategory === 'roads'
@@ -771,7 +781,7 @@ export const LevelEditorUI: React.FC<LevelEditorUIProps> = ({
                           : 'bg-slate-900 text-slate-400 hover:text-white'
                       }`}
                     >
-                      🏎️ Straßen & Kurs
+                      🏁 Rennstrecke & Deko
                     </button>
                     <button
                       onClick={() => setObjectCategory('nature')}
@@ -807,8 +817,16 @@ export const LevelEditorUI: React.FC<LevelEditorUIProps> = ({
 
                   {/* Filtered Objects Grid */}
                   <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
-                    {(objectCategory === 'roads'
+                    {(objectCategory === 'vehicles'
                       ? [
+                          { type: 'vehicle_kart_classic', name: 'Standard-Kart (Rot)', icon: '🏎️' },
+                          { type: 'vehicle_kart_sport', name: 'Turbo GT Racer (Cyan)', icon: '⚡' },
+                          { type: 'vehicle_buggy_offroad', name: 'Offroad-Buggy', icon: '🚜' },
+                          { type: 'vehicle_hover_cycle', name: 'Sheikah-Bike', icon: '🏍️' },
+                        ]
+                      : objectCategory === 'roads'
+                      ? [
+                          { type: 'vehicle_kart_classic', name: 'Standard-Kart', icon: '🏎️' },
                           { type: 'track_start_gate', name: 'Start-Tor', icon: '🏁' },
                           { type: 'track_finish_gate', name: 'Ziel-Tor', icon: '🏆' },
                           { type: 'track_pylon', name: 'Pylone', icon: '🔶' },
@@ -816,7 +834,7 @@ export const LevelEditorUI: React.FC<LevelEditorUIProps> = ({
                           { type: 'track_boost_pad', name: 'Turbo-Boost-Pad', icon: '⚡' },
                           { type: 'track_barrier', name: 'Beton-Barriere', icon: '🚧' },
                           { type: 'track_coin', name: 'Rupee-Münze', icon: '💎' },
-                          { type: 'walled_road', name: 'Straßen-Block', icon: '🏎️' },
+                          { type: 'walled_road', name: 'Straßen-Block', icon: '🛣️' },
                           { type: 'catan_road', name: 'Catan-Weg', icon: '🛤️' },
                         ]
                       : objectCategory === 'nature'

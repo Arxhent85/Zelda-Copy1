@@ -165,6 +165,24 @@ export interface MountData {
   maxStamina: number;
 }
 
+export type VehicleType = 'kart_classic' | 'kart_sport' | 'buggy_offroad' | 'hover_cycle';
+
+export interface VehicleData {
+  id: string;
+  type: VehicleType;
+  name: string;
+  position: Vector3D;
+  rotation: number;
+  velocity: Vector3D;
+  speed: number;
+  maxSpeed: number;
+  steerAngle: number;
+  isDriving: boolean;
+  isDrifting: boolean;
+  driftStage: number; // 0 = none, 1 = blue mini-turbo, 2 = orange super, 3 = purple ultra
+  turboTimer: number;
+}
+
 export interface WorldObjectType {
   id: string;
   type: 'chest' | 'shrine' | 'rupee' | 'apple' | 'potion' | 'npc' | 'crystal_node';

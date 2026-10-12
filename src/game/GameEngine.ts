@@ -22,6 +22,7 @@ import { WaterManager } from './WaterShader';
 import { SnowFootprintManager } from './SnowFootprints';
 import { MountSystem } from './MountSystem';
 import { WildlifeManager } from './WildlifeManager';
+import { VehicleSystem } from './VehicleSystem';
 
 export class GameEngine {
   public renderer: THREE.WebGLRenderer;
@@ -45,6 +46,7 @@ export class GameEngine {
   public editorManager: LevelEditorManager;
   public mountSystem: MountSystem;
   public wildlifeManager: WildlifeManager;
+  public vehicleSystem: VehicleSystem;
 
   public isRunning = false;
   private animFrameId: number | null = null;
@@ -260,7 +262,7 @@ export class GameEngine {
     this.renderer.shadowMap.enabled = settings.shadowsEnabled;
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 0.92;
+    this.renderer.toneMappingExposure = 1.18;
 
     // 2. Three.js Scene & Camera Setup
     this.scene = new THREE.Scene();
@@ -305,6 +307,7 @@ export class GameEngine {
     this.buildingSystem = new BuildingSystem(this.scene);
     this.mountSystem = new MountSystem(this.scene);
     this.wildlifeManager = new WildlifeManager(this.scene);
+    this.vehicleSystem = new VehicleSystem(this.scene, this.buildingSystem);
 
     this.initWorld();
     this.terrainDeformation = new TerrainDeformationManager(this.terrainManager);
@@ -318,7 +321,8 @@ export class GameEngine {
       this.collectibleManager,
       this.miningSystem,
       this.mountSystem,
-      this.wildlifeManager
+      this.wildlifeManager,
+      this.vehicleSystem
     );
 
     this.editorManager.onObstaclesChanged = () => {
@@ -453,9 +457,42 @@ export class GameEngine {
               this.cameraControls.panEditor(input.moveZ * panSpeed, input.moveX * panSpeed);
             }
           } else {
-            const isRiding = this.mountSystem.activeMountedIndex >= 0;
+            const isDriving = this.vehicleSystem.activeVehicleIndex >= 0;
+            const isRiding = !isDriving && this.mountSystem.activeMountedIndex >= 0;
 
-            if (isRiding) {
+            if (isDriving) {
+              // 🏎️ Vehicle Driving Controls (Mario Kart & GTA Physics)
+              this.vehicleSystem.update(
+                delta,
+                {
+                  moveX: input.moveX,
+                  moveZ: input.moveZ,
+                  isSprint: input.isSprint,
+                  isJump: input.isJump,
+                },
+                this.cameraControls.yaw
+              );
+
+              const activeVeh = this.vehicleSystem.vehicles[this.vehicleSystem.activeVehicleIndex];
+              if (activeVeh) {
+                // Place avatar hero into the cockpit driver's seat
+                this.physics.position.set(
+                  activeVeh.data.position.x,
+                  activeVeh.data.position.y + 0.32,
+                  activeVeh.data.position.z
+                );
+                this.physics.rotation = activeVeh.data.rotation;
+                this.physics.velocity.set(0, 0, 0);
+                this.physics.actionState = 'RIDE';
+
+                // GTA-style Chase Camera
+                this.cameraControls.isDrivingMode = true;
+                this.cameraControls.drivingVehicleYaw = activeVeh.data.rotation;
+                this.cameraControls.drivingSpeed = activeVeh.data.speed;
+                this.cameraControls.drivingIsTurbo = activeVeh.data.turboTimer > 0;
+              }
+            } else if (isRiding) {
+              this.cameraControls.isDrivingMode = false;
               // Ride controls - horse / glider physics
               this.mountSystem.update(
                 delta,
@@ -476,6 +513,7 @@ export class GameEngine {
                 this.physics.actionState = 'RIDE';
               }
             } else {
+              this.cameraControls.isDrivingMode = false;
               // On-foot locomotion & physics simulation
               const onRoad = this.buildingSystem.isPlayerOnCatanRoad(this.physics.position);
               this.physics.update(
@@ -651,6 +689,9 @@ export class GameEngine {
     this.wildlifeManager.update(delta, this.physics.position);
     if (this.mountSystem.activeMountedIndex < 0) {
       this.mountSystem.update(delta);
+    }
+    if (this.vehicleSystem.activeVehicleIndex < 0) {
+      this.vehicleSystem.update(delta);
     }
     if (this.buildingSystem.isBuildModeActive) {
       this.buildingSystem.updateHologram(this.physics.position, this.physics.rotation);
@@ -1228,7 +1269,31 @@ export class GameEngine {
   public interactWithNearbyObject(): string | null {
     const playerPos = this.physics.position;
 
-    // 0. Mount Interaction (Horses & Zonai Hovercrafts)
+    // 0. Vehicle Interaction (Karts, Sport Racers, Buggies, Sheikah Cycles)
+    if (this.vehicleSystem.activeVehicleIndex >= 0) {
+      const exitRes = this.vehicleSystem.exitVehicle();
+      if (exitRes.success) {
+        this.physics.position.copy(exitRes.exitPos);
+        this.physics.actionState = 'IDLE';
+        this.cameraControls.isDrivingMode = false;
+        if (this.onToastMessage) this.onToastMessage(exitRes.message);
+        return exitRes.message;
+      }
+    }
+
+    const nearVehicle = this.vehicleSystem.getNearbyVehicle(playerPos);
+    if (nearVehicle) {
+      const enterRes = this.vehicleSystem.enterVehicle(nearVehicle.index);
+      if (enterRes.success) {
+        this.physics.actionState = 'RIDE';
+        this.physics.velocity.set(0, 0, 0);
+        this.cameraControls.isDrivingMode = true;
+        if (this.onToastMessage) this.onToastMessage(enterRes.message);
+        return enterRes.message;
+      }
+    }
+
+    // 1. Mount Interaction (Horses & Zonai Hovercrafts)
     const mountRes = this.mountSystem.toggleMount(playerPos);
     if (mountRes.success) {
       if (mountRes.mounted) {
@@ -1279,6 +1344,10 @@ export class GameEngine {
     return null;
   }
 
+  public toggleVehicleDrive(): string | null {
+    return this.interactWithNearbyObject();
+  }
+
   /**
    * Resets the entire world to the pristine default state:
    * Clears all player built structures, tracks, roads, walls, terraforming deltas,
@@ -1286,6 +1355,11 @@ export class GameEngine {
    * and teleports Link back to the starter shrine basin!
    */
   public resetWorldToDefault() {
+    if (this.vehicleSystem.activeVehicleIndex >= 0) {
+      this.vehicleSystem.exitVehicle();
+    }
+    this.cameraControls.isDrivingMode = false;
+
     this.terrainDeformation.clearAllDeltas();
     this.editorManager.resetWorldToDefault();
 

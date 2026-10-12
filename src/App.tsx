@@ -348,6 +348,8 @@ export default function App() {
           toastMessage={toastMessage}
           targetEnemyPos={targetScreenPos}
           trackRace={engine?.trackRace}
+          isDriving={engine ? engine.vehicleSystem.activeVehicleIndex >= 0 : false}
+          vehicleSpeed={engine && engine.vehicleSystem.activeVehicleIndex >= 0 ? engine.vehicleSystem.vehicles[engine.vehicleSystem.activeVehicleIndex]?.data.speed : 0}
           onOpenQuickMenu={() => setIsQuickMenuOpen(true)}
         />
       )}
@@ -377,6 +379,25 @@ export default function App() {
             className="flex items-center gap-1 rounded-xl bg-red-600/90 hover:bg-red-500 px-3 sm:px-3.5 py-1.5 text-xs font-bold text-white active:scale-95 shadow-md border border-red-400/50 transition whitespace-nowrap"
           >
             <X className="h-3.5 w-3.5" /> Beenden <span className="hidden sm:inline">(ESC / B / X)</span>
+          </button>
+        </div>
+      )}
+
+      {/* Vehicle Entry Prompt when nearby */}
+      {engine && !isEditorActive && engine.vehicleSystem.activeVehicleIndex < 0 && engine.vehicleSystem.getNearbyVehicle(new THREE.Vector3(playerPos.x, playerPos.y, playerPos.z)) && (
+        <div
+          className="absolute bottom-24 left-1/2 z-30 -translate-x-1/2 flex items-center gap-2.5 rounded-2xl border border-rose-500/70 bg-slate-950/90 px-4 py-2.5 shadow-2xl backdrop-blur-md animate-bounce cursor-pointer"
+          onClick={() => {
+            const msg = engine.interactWithNearbyObject();
+            if (msg) showToast(msg);
+          }}
+        >
+          <span className="text-xl">🏎️</span>
+          <span className="text-xs font-bold text-rose-300">
+            [E] In {engine.vehicleSystem.getNearbyVehicle(new THREE.Vector3(playerPos.x, playerPos.y, playerPos.z))?.vehicle.name} einsteigen
+          </span>
+          <button className="rounded-xl bg-gradient-to-r from-rose-600 to-red-500 px-3 py-1 text-xs font-black text-white shadow-md active:scale-95">
+            Fahren 🏁
           </button>
         </div>
       )}
@@ -469,6 +490,13 @@ export default function App() {
           }
         }}
         onInteract={() => {
+          if (engine) {
+            const msg = engine.interactWithNearbyObject();
+            if (msg) showToast(msg);
+          }
+        }}
+        isDriving={engine ? engine.vehicleSystem.activeVehicleIndex >= 0 : false}
+        onExitVehicle={() => {
           if (engine) {
             const msg = engine.interactWithNearbyObject();
             if (msg) showToast(msg);

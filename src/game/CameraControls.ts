@@ -13,6 +13,12 @@ export class CameraControls {
   public editorViewMode: '3d' | 'topdown' | 'isometric' = '3d';
   public editorTarget: THREE.Vector3 = new THREE.Vector3(0, 6, 0);
 
+  // 🏎️ GTA & Mario Kart Vehicle Chase Camera State
+  public isDrivingMode = false;
+  public drivingVehicleYaw = 0;
+  public drivingSpeed = 0;
+  public drivingIsTurbo = false;
+
   private smoothedFocus = new THREE.Vector3();
   private isInitialized = false;
 
@@ -48,8 +54,8 @@ export class CameraControls {
   }
 
   public zoom(delta: number) {
-    const minD = this.isEditorMode ? 8.0 : 3.5;
-    const maxD = this.isEditorMode ? 250.0 : 25.0;
+    const minD = this.isEditorMode ? 8.0 : this.isDrivingMode ? 5.5 : 3.5;
+    const maxD = this.isEditorMode ? 250.0 : this.isDrivingMode ? 14.0 : 25.0;
     this.distance = Math.max(minD, Math.min(maxD, this.distance + delta));
   }
 
@@ -71,21 +77,22 @@ export class CameraControls {
   public handleMouseMove(deltaX: number, deltaY: number, sensitivity: number = 0.003) {
     if (this.isLockedOn) return; // Locked-on camera follows target automatically
     if (this.isEditorMode && this.editorViewMode === 'topdown') {
-      // In strict topdown mode, don't accidentally tilt the camera when painting
       return;
     }
     this.yaw -= deltaX * sensitivity;
     this.pitch += deltaY * sensitivity;
 
     // Clamp pitch to avoid flipped camera
-    const minP = this.isEditorMode ? 0.05 : -0.1;
-    const maxP = this.isEditorMode ? 1.54 : 1.1;
+    const minP = this.isEditorMode ? 0.05 : this.isDrivingMode ? 0.05 : -0.1;
+    const maxP = this.isEditorMode ? 1.54 : this.isDrivingMode ? 0.85 : 1.1;
     this.pitch = Math.max(minP, Math.min(maxP, this.pitch));
   }
 
   public updateCamera(playerPos: THREE.Vector3, delta: number) {
     const focusTarget = this.isEditorMode
       ? this.editorTarget
+      : this.isDrivingMode
+      ? playerPos.clone().add(new THREE.Vector3(0, 1.1, 0))
       : playerPos.clone().add(new THREE.Vector3(0, 1.8, 0));
 
     if (!this.isInitialized) {
@@ -97,10 +104,34 @@ export class CameraControls {
       // Auto-face locked target
       const lookDir = new THREE.Vector3().subVectors(this.targetLockEnemy, focusTarget).normalize();
       this.yaw = Math.atan2(-lookDir.x, -lookDir.z);
+    } else if (this.isDrivingMode) {
+      // 🏎️ Classic GTA / Mario Kart Chase Camera:
+      // Camera smoothly tracks behind the vehicle's heading
+      const targetYaw = this.drivingVehicleYaw + Math.PI;
+      const yawDiff = Math.atan2(Math.sin(targetYaw - this.yaw), Math.cos(targetYaw - this.yaw));
+      this.yaw += yawDiff * Math.min(1.0, delta * 5.5);
+
+      // Camera distance widens with high speed
+      const targetDist = 6.6 + Math.min(1.0, Math.abs(this.drivingSpeed) / 30.0) * 3.2;
+      this.distance = THREE.MathUtils.lerp(this.distance, targetDist, delta * 4.0);
+      this.pitch = THREE.MathUtils.lerp(this.pitch, 0.22, delta * 3.5);
+
+      // Turbo FOV rush
+      const targetFov = this.drivingIsTurbo ? 74 : (65 + Math.min(1.0, Math.abs(this.drivingSpeed) / 35.0) * 4);
+      if (Math.abs(this.camera.fov - targetFov) > 0.1) {
+        this.camera.fov = THREE.MathUtils.lerp(this.camera.fov, targetFov, delta * 5.0);
+        this.camera.updateProjectionMatrix();
+      }
+    } else {
+      // Restore standard 65 FOV when on-foot
+      if (Math.abs(this.camera.fov - 65) > 0.1) {
+        this.camera.fov = THREE.MathUtils.lerp(this.camera.fov, 65, delta * 4.0);
+        this.camera.updateProjectionMatrix();
+      }
     }
 
     // Framerate-independent exponential dampening alpha factor
-    const alpha = 1.0 - Math.exp(-18.0 * delta);
+    const alpha = 1.0 - Math.exp((this.isDrivingMode ? -24.0 : -18.0) * delta);
 
     // Smooth focus target
     this.smoothedFocus.lerp(focusTarget, alpha);

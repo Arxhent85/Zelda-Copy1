@@ -1100,7 +1100,7 @@ export class BuildingSystem {
         // 1. Central Asphalt Roadbed (4.6m wide x 3.2m long x 0.16m high)
         const roadbedMat = isHologram
           ? this.hologramMaterial
-          : new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.85 });
+          : new THREE.MeshStandardMaterial({ color: 0x526074, roughness: 0.72 });
         const roadbed = new THREE.Mesh(new THREE.BoxGeometry(4.6, 0.16, 3.2), roadbedMat);
         roadbed.position.y = 0.08;
         roadbed.castShadow = true;

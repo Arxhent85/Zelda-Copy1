@@ -35,11 +35,11 @@ export class SkyAndLightingManager {
     this.fog = new THREE.FogExp2(0x87ceeb, 0.0025);
     this.scene.fog = this.fog;
 
-    // 2. Ambient & Hemisphere Light (Tuned for rich contrast and no overexposure)
-    this.ambientLight = new THREE.AmbientLight(0xffffff, 0.32);
+    // 2. Ambient & Hemisphere Light (Tuned for bright, clear visibility across terrain & roads)
+    this.ambientLight = new THREE.AmbientLight(0xffffff, 0.65);
     this.scene.add(this.ambientLight);
 
-    this.hemiLight = new THREE.HemisphereLight(0x87ceeb, 0x224a1e, 0.38);
+    this.hemiLight = new THREE.HemisphereLight(0xbae6fd, 0x4a7c38, 0.58);
     this.scene.add(this.hemiLight);
 
     const isMobile = typeof window !== 'undefined' && (
@@ -47,8 +47,8 @@ export class SkyAndLightingManager {
       ('ontouchstart' in window && window.innerWidth < 1024)
     );
 
-    // 3. Sun Directional Light (Main shadow caster - balanced 1.15 intensity)
-    const sunLight = new THREE.DirectionalLight(0xfffaed, 1.15);
+    // 3. Sun Directional Light (Main shadow caster - crisp 1.35 intensity)
+    const sunLight = new THREE.DirectionalLight(0xfffaed, 1.35);
     sunLight.castShadow = quality !== 'low';
 
     // Configure Tight Shadow Map Cascade
@@ -69,14 +69,14 @@ export class SkyAndLightingManager {
     this.dirLight = sunLight;
 
     // 4. Subtle BotW-style Rim Light (Opposes sun angle for hero & foliage silhouette highlights)
-    const rim = new THREE.DirectionalLight(0xbae6fd, 0.25);
+    const rim = new THREE.DirectionalLight(0xbae6fd, 0.35);
     rim.castShadow = false;
     this.scene.add(rim);
     this.scene.add(rim.target);
     this.rimLight = rim;
 
     // 5. Moon Light
-    const moon = new THREE.DirectionalLight(0x8faaff, 0.2);
+    const moon = new THREE.DirectionalLight(0x8faaff, 0.35);
     moon.castShadow = false;
     this.scene.add(moon);
     this.scene.add(moon.target);
@@ -199,41 +199,41 @@ export class SkyAndLightingManager {
       cTop.set('#4a2e5d'); // Twilight purple
       cBottom.set('#f37335'); // Vibrant sunset orange
       if (this.ambientLight) {
-        this.ambientLight.color.set('#ffab6b');
-        this.ambientLight.intensity = 0.28;
+        this.ambientLight.color.set('#ffcba4');
+        this.ambientLight.intensity = 0.52;
       }
       if (this.dirLight) {
         this.dirLight.color.set('#ffaa44');
-        this.dirLight.intensity = 0.85;
+        this.dirLight.intensity = 1.10;
       }
-      if (this.hemiLight) this.hemiLight.intensity = 0.3;
+      if (this.hemiLight) this.hemiLight.intensity = 0.45;
       if (this.fog) this.fog.color.set('#f37335');
     } else if (isDay) {
       cTop.set('#2980b9'); // Emerald Zelda Sky Blue
       cBottom.set('#87ceeb');
       if (this.ambientLight) {
         this.ambientLight.color.set('#ffffff');
-        this.ambientLight.intensity = 0.32;
+        this.ambientLight.intensity = 0.65;
       }
       if (this.dirLight) {
         this.dirLight.color.set('#fffce6');
-        this.dirLight.intensity = 1.15;
+        this.dirLight.intensity = 1.35;
       }
-      if (this.hemiLight) this.hemiLight.intensity = 0.38;
+      if (this.hemiLight) this.hemiLight.intensity = 0.58;
       if (this.fog) this.fog.color.set('#87ceeb');
     } else {
       // Night
       cTop.set('#050b14');
       cBottom.set('#0f2027');
       if (this.ambientLight) {
-        this.ambientLight.color.set('#1a2638');
-        this.ambientLight.intensity = 0.16;
+        this.ambientLight.color.set('#334a6d');
+        this.ambientLight.intensity = 0.32;
       }
       if (this.dirLight) {
-        this.dirLight.color.set('#3a506b');
-        this.dirLight.intensity = 0.2;
+        this.dirLight.color.set('#4b6b94');
+        this.dirLight.intensity = 0.38;
       }
-      if (this.hemiLight) this.hemiLight.intensity = 0.18;
+      if (this.hemiLight) this.hemiLight.intensity = 0.28;
       if (this.fog) this.fog.color.set('#0d1b2a');
     }
 

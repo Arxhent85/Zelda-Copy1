@@ -7,6 +7,7 @@ import { CollectibleManager } from './Collectibles';
 import { MiningAndHarvestingSystem } from './MiningAndHarvestingSystem';
 import { MountSystem } from './MountSystem';
 import { WildlifeManager } from './WildlifeManager';
+import { VehicleSystem } from './VehicleSystem';
 import { audioEngine } from './AudioEngine';
 
 export type EditorToolType =
@@ -77,7 +78,8 @@ export class LevelEditorManager {
     public collectibleManager: CollectibleManager,
     public miningSystem: MiningAndHarvestingSystem,
     public mountSystem?: MountSystem,
-    public wildlifeManager?: WildlifeManager
+    public wildlifeManager?: WildlifeManager,
+    public vehicleSystem?: VehicleSystem
   ) {
     this.editorGroup.name = 'LevelEditorGroup';
     this.scene.add(this.editorGroup);
@@ -614,20 +616,20 @@ export class LevelEditorManager {
     const ctx = canvas.getContext('2d')!;
 
     if (matType === 'asphalt') {
-      // Dark tarmac
-      ctx.fillStyle = '#1c2128';
+      // Slate Gray Racing Tarmac (bright, clear, crisp visibility)
+      ctx.fillStyle = '#4b5563';
       ctx.fillRect(0, 0, 512, 512);
       // Realistic asphalt grain
       for (let i = 0; i < 2500; i++) {
-        ctx.fillStyle = Math.random() > 0.5 ? '#262f3a' : '#12161b';
+        ctx.fillStyle = Math.random() > 0.5 ? '#64748b' : '#374151';
         ctx.fillRect(Math.random() * 512, Math.random() * 512, 2, 2);
       }
       // Bright white edge boundary lines
-      ctx.fillStyle = '#f8fafc';
-      ctx.fillRect(24, 0, 16, 512);
-      ctx.fillRect(512 - 40, 0, 16, 512);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(20, 0, 18, 512);
+      ctx.fillRect(512 - 38, 0, 18, 512);
       // Golden yellow dashed centerline
-      ctx.strokeStyle = '#facc15';
+      ctx.strokeStyle = '#fde047';
       ctx.lineWidth = 14;
       ctx.setLineDash([48, 48]);
       ctx.beginPath();
@@ -893,11 +895,11 @@ export class LevelEditorManager {
 
     const roadTex = this.createRoadTexture(this.roadPlannerMaterial);
     const matConfigs: Record<string, { color: number; roughness: number; metalness: number; emissive?: number; emissiveIntensity?: number }> = {
-      asphalt: { color: 0x334155, roughness: 0.8, metalness: 0.1 },
-      cobblestone: { color: 0x94a3b8, roughness: 0.88, metalness: 0.05 },
-      wood: { color: 0x92400e, roughness: 0.75, metalness: 0.05 },
-      dirt: { color: 0xb45309, roughness: 0.95, metalness: 0.02 },
-      sheikah_neon: { color: 0x0f172a, roughness: 0.25, metalness: 0.4, emissive: 0x00f0ff, emissiveIntensity: 0.6 },
+      asphalt: { color: 0xffffff, roughness: 0.72, metalness: 0.05 },
+      cobblestone: { color: 0xffffff, roughness: 0.82, metalness: 0.05 },
+      wood: { color: 0xffffff, roughness: 0.70, metalness: 0.05 },
+      dirt: { color: 0xffffff, roughness: 0.88, metalness: 0.02 },
+      sheikah_neon: { color: 0xffffff, roughness: 0.25, metalness: 0.4, emissive: 0x00f0ff, emissiveIntensity: 0.6 },
     };
     const cfg = matConfigs[this.roadPlannerMaterial] || matConfigs.asphalt;
 
@@ -952,6 +954,13 @@ export class LevelEditorManager {
         rotY0
       );
       this.lastBuiltRoadSegmentIds.push(startGateMesh.id ? `road_gate_start_${startGateMesh.id}` : `road_gate_start_${Date.now()}`);
+
+      // Auto-spawn a starter kart right on the starting line grid!
+      if (this.vehicleSystem) {
+        const kx = p0.x + Math.sin(rotY0) * 2.5;
+        const kz = p0.z + Math.cos(rotY0) * 2.5;
+        this.vehicleSystem.createVehicle('kart_classic', kx, kz, rotY0, 'Rennstrecken-Kart');
+      }
     }
 
     // 5. Place Finish Gate if Sprint course (not loop) and requested
@@ -1116,6 +1125,14 @@ export class LevelEditorManager {
       this.mountSystem.createHorse(id, 'Epona', worldX, worldZ, 0x6d3b14, 0x221307, 0x991b1b);
     } else if (objType === 'mount_glider' && this.mountSystem) {
       this.mountSystem.createZonaiGlider(id, 'Zonai-Gleiter', worldX, worldZ);
+    } else if (objType === 'vehicle_kart_classic' && this.vehicleSystem) {
+      this.vehicleSystem.createVehicle('kart_classic', worldX, worldZ, 0, 'Standard-Kart');
+    } else if (objType === 'vehicle_kart_sport' && this.vehicleSystem) {
+      this.vehicleSystem.createVehicle('kart_sport', worldX, worldZ, 0, 'Turbo GT Racer');
+    } else if (objType === 'vehicle_buggy_offroad' && this.vehicleSystem) {
+      this.vehicleSystem.createVehicle('buggy_offroad', worldX, worldZ, 0, 'Offroad-Buggy');
+    } else if (objType === 'vehicle_hover_cycle' && this.vehicleSystem) {
+      this.vehicleSystem.createVehicle('hover_cycle', worldX, worldZ, 0, 'Sheikah-Bike');
     } else if (objType === 'wildlife_stag' && this.wildlifeManager) {
       this.wildlifeManager.createStag(worldX, worldZ);
     } else if (objType === 'wildlife_blupee' && this.wildlifeManager) {

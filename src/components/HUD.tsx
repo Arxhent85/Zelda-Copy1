@@ -17,6 +17,8 @@ interface HUDProps {
     lapCount: number;
     bestLapTime: number | null;
   };
+  isDriving?: boolean;
+  vehicleSpeed?: number;
 }
 
 export const HUD: React.FC<HUDProps> = ({
@@ -29,6 +31,8 @@ export const HUD: React.FC<HUDProps> = ({
   targetEnemyPos,
   onOpenQuickMenu,
   trackRace,
+  isDriving = false,
+  vehicleSpeed = 0,
 }) => {
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
 
@@ -193,16 +197,32 @@ export const HUD: React.FC<HUDProps> = ({
         </div>
       )}
 
-      {/* Keyboard Controls Guide Bar (Hidden on small touch screens) */}
-      <div className="hidden lg:flex absolute bottom-4 left-1/2 z-10 -translate-x-1/2 items-center gap-3 rounded-full bg-slate-950/75 px-5 py-1.5 backdrop-blur-md border border-white/10 text-[11px] text-slate-300">
-        <span><kbd className="rounded bg-slate-800 px-1.5 py-0.5 font-bold text-amber-300">WASD</kbd> Gehen</span>
-        <span><kbd className="rounded bg-slate-800 px-1.5 py-0.5 font-bold text-orange-300">F</kbd> Abbauen/Fällen</span>
-        <span><kbd className="rounded bg-slate-800 px-1.5 py-0.5 font-bold text-cyan-300">C</kbd> Crafting</span>
-        <span><kbd className="rounded bg-slate-800 px-1.5 py-0.5 font-bold text-emerald-300">B</kbd> Bauen</span>
-        <span><kbd className="rounded bg-slate-800 px-1.5 py-0.5 font-bold text-red-300">ESC/X</kbd> Bau-Modus Beenden</span>
-        <span><kbd className="rounded bg-slate-800 px-1.5 py-0.5 font-bold text-slate-200">M</kbd> Karte</span>
-        <span><kbd className="rounded bg-slate-800 px-1.5 py-0.5 font-bold text-slate-200">I</kbd> Inventar</span>
-      </div>
+      {/* Controls Guide & Racing Speedometer */}
+      {isDriving ? (
+        <div className="absolute bottom-4 left-1/2 z-20 -translate-x-1/2 flex items-center gap-3 rounded-full bg-slate-950/85 px-6 py-2 backdrop-blur-md border border-cyan-400/40 text-xs shadow-2xl animate-fade-in pointer-events-none">
+          <div className="flex items-center gap-1.5 font-black text-cyan-300">
+            <span className="text-base">🏎️</span>
+            <span className="font-mono text-sm">{Math.round(Math.abs(vehicleSpeed) * 3.6)} <span className="text-[10px] text-cyan-400">km/h</span></span>
+          </div>
+          <div className="h-4 w-[1px] bg-white/20" />
+          <div className="hidden sm:flex items-center gap-2 text-slate-200 font-bold text-[11px]">
+            <span><kbd className="rounded bg-slate-800 px-1.5 py-0.5 text-amber-300 font-black">WASD</kbd> Fahren</span>
+            <span><kbd className="rounded bg-slate-800 px-1.5 py-0.5 text-yellow-300 font-black">Space</kbd> Drift (Halten & Loslassen!)</span>
+            <span><kbd className="rounded bg-slate-800 px-1.5 py-0.5 text-cyan-300 font-black">Shift</kbd> Turbo</span>
+            <span><kbd className="rounded bg-slate-800 px-1.5 py-0.5 text-rose-300 font-black">E</kbd> Aussteigen</span>
+          </div>
+        </div>
+      ) : (
+        <div className="hidden lg:flex absolute bottom-4 left-1/2 z-10 -translate-x-1/2 items-center gap-3 rounded-full bg-slate-950/75 px-5 py-1.5 backdrop-blur-md border border-white/10 text-[11px] text-slate-300">
+          <span><kbd className="rounded bg-slate-800 px-1.5 py-0.5 font-bold text-amber-300">WASD</kbd> Gehen</span>
+          <span><kbd className="rounded bg-slate-800 px-1.5 py-0.5 font-bold text-orange-300">F</kbd> Abbauen/Fällen</span>
+          <span><kbd className="rounded bg-slate-800 px-1.5 py-0.5 font-bold text-cyan-300">C</kbd> Crafting</span>
+          <span><kbd className="rounded bg-slate-800 px-1.5 py-0.5 font-bold text-emerald-300">B</kbd> Bauen</span>
+          <span><kbd className="rounded bg-slate-800 px-1.5 py-0.5 font-bold text-red-300">ESC/X</kbd> Bau-Modus Beenden</span>
+          <span><kbd className="rounded bg-slate-800 px-1.5 py-0.5 font-bold text-slate-200">M</kbd> Karte</span>
+          <span><kbd className="rounded bg-slate-800 px-1.5 py-0.5 font-bold text-slate-200">I</kbd> Inventar</span>
+        </div>
+      )}
     </div>
   );
 };

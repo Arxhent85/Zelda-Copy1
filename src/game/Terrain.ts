@@ -160,12 +160,12 @@ export class TerrainManager {
     const colors = new Float32Array(count * 3);
     const color = new THREE.Color();
 
-    const cSand = new THREE.Color('#d4b886');
-    const cPlainsGreen = new THREE.Color('#3b7a36');
-    const cEmeraldValley = new THREE.Color('#4a8f3c');
-    const cForestMoss = new THREE.Color('#2d5727');
-    const cRockSlate = new THREE.Color('#555f68');
-    const cSnowIce = new THREE.Color('#d2e8ff');
+    const cSand = new THREE.Color('#e5d3b3');
+    const cPlainsGreen = new THREE.Color('#52a446');
+    const cEmeraldValley = new THREE.Color('#65be54');
+    const cForestMoss = new THREE.Color('#3a7532');
+    const cRockSlate = new THREE.Color('#64748b');
+    const cSnowIce = new THREE.Color('#dbeafe');
     const cSnowPure = new THREE.Color('#fcfdff');
 
     for (let i = 0; i < count; i++) {
@@ -395,13 +395,13 @@ export class TerrainManager {
     const colAttr = this.terrainGeometry.attributes.color;
     const count = posAttr.count;
 
-    const cSand = new THREE.Color('#d9c59a');
-    const cPlainsGreen = new THREE.Color('#388e3c');
-    const cEmeraldValley = new THREE.Color('#2e7d32');
-    const cForestMoss = new THREE.Color('#1b5e20');
-    const cRockSlate = new THREE.Color('#546e7a');
+    const cSand = new THREE.Color('#e5d3b3');
+    const cPlainsGreen = new THREE.Color('#52a446');
+    const cEmeraldValley = new THREE.Color('#65be54');
+    const cForestMoss = new THREE.Color('#3a7532');
+    const cRockSlate = new THREE.Color('#64748b');
     const cSnowPure = new THREE.Color('#ffffff');
-    const cSnowIce = new THREE.Color('#e0f7fa');
+    const cSnowIce = new THREE.Color('#dbeafe');
     const tempCol = new THREE.Color();
 
     for (let i = 0; i < count; i++) {

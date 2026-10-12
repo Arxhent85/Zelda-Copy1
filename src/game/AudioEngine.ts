@@ -437,6 +437,124 @@ class WebAudioEngine {
   public playCraftSuccess() {
     this.playRupeeChime();
   }
+
+  // 🏎️ Mario Kart / Racing Vehicle Sound Effects
+  private lastDriftSoundTime = 0;
+  public playDriftSqueal() {
+    if (!this.ctx || !this.sfxGain) return;
+    const now = performance.now();
+    if (now - this.lastDriftSoundTime < 180) return;
+    this.lastDriftSoundTime = now;
+
+    const t = this.ctx.currentTime;
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(620 + Math.random() * 80, t);
+    osc.frequency.exponentialRampToValueAtTime(380, t + 0.16);
+
+    gain.gain.setValueAtTime(0.12, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.16);
+
+    osc.connect(gain);
+    gain.connect(this.sfxGain);
+    osc.start(t);
+    osc.stop(t + 0.18);
+  }
+
+  public playMiniTurboBoost(tier: number = 1) {
+    if (!this.ctx || !this.sfxGain) return;
+    const t = this.ctx.currentTime;
+
+    // Upward pitch sweep whoosh
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+
+    const baseFreq = tier === 3 ? 380 : tier === 2 ? 320 : 260;
+    const peakFreq = tier === 3 ? 1200 : tier === 2 ? 960 : 780;
+
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(baseFreq, t);
+    osc.frequency.exponentialRampToValueAtTime(peakFreq, t + 0.35);
+
+    gain.gain.setValueAtTime(0.25, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.45);
+
+    osc.connect(gain);
+    gain.connect(this.sfxGain);
+    osc.start(t);
+    osc.stop(t + 0.48);
+
+    // Boost chime sparkle
+    const chime = this.ctx.createOscillator();
+    const chimeGain = this.ctx.createGain();
+    chime.type = 'sine';
+    chime.frequency.setValueAtTime(tier === 3 ? 1318.51 : 1046.5, t + 0.08);
+    chimeGain.gain.setValueAtTime(0.18, t + 0.08);
+    chimeGain.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
+    chime.connect(chimeGain);
+    chimeGain.connect(this.sfxGain);
+    chime.start(t + 0.08);
+    chime.stop(t + 0.38);
+  }
+
+  public playVehicleImpact() {
+    if (!this.ctx || !this.sfxGain) return;
+    const t = this.ctx.currentTime;
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+
+    osc.type = 'square';
+    osc.frequency.setValueAtTime(140, t);
+    osc.frequency.exponentialRampToValueAtTime(45, t + 0.15);
+
+    gain.gain.setValueAtTime(0.28, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
+
+    osc.connect(gain);
+    gain.connect(this.sfxGain);
+    osc.start(t);
+    osc.stop(t + 0.2);
+  }
+
+  public playVehicleEnter() {
+    if (!this.ctx || !this.sfxGain) return;
+    const t = this.ctx.currentTime;
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(220, t);
+    osc.frequency.exponentialRampToValueAtTime(440, t + 0.2);
+
+    gain.gain.setValueAtTime(0.2, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.22);
+
+    osc.connect(gain);
+    gain.connect(this.sfxGain);
+    osc.start(t);
+    osc.stop(t + 0.25);
+  }
+
+  public playVehicleExit() {
+    if (!this.ctx || !this.sfxGain) return;
+    const t = this.ctx.currentTime;
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(440, t);
+    osc.frequency.exponentialRampToValueAtTime(220, t + 0.18);
+
+    gain.gain.setValueAtTime(0.18, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
+
+    osc.connect(gain);
+    gain.connect(this.sfxGain);
+    osc.start(t);
+    osc.stop(t + 0.22);
+  }
 }
 
 export const audioEngine = new WebAudioEngine();

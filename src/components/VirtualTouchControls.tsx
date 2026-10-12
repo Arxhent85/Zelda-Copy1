@@ -27,6 +27,10 @@ interface TouchControlsProps {
   isFlying?: boolean;
   onAscend?: (active: boolean) => void;
   onDescend?: (active: boolean) => void;
+  isDriving?: boolean;
+  onExitVehicle?: () => void;
+  onGas?: (active: boolean) => void;
+  onBrake?: (active: boolean) => void;
 }
 
 export const VirtualTouchControls: React.FC<TouchControlsProps> = ({
@@ -54,6 +58,10 @@ export const VirtualTouchControls: React.FC<TouchControlsProps> = ({
   isFlying = false,
   onAscend,
   onDescend,
+  isDriving = false,
+  onExitVehicle,
+  onGas,
+  onBrake,
 }) => {
   // Joystick State
   const joystickTouchId = useRef<number | null>(null);
@@ -306,107 +314,227 @@ export const VirtualTouchControls: React.FC<TouchControlsProps> = ({
           </button>
         </div>
 
-        {/* Soaring Flight Vertical Altitude Cluster (Ascend ⬆️ / Descend ⬇️) */}
-        {isFlying && (
-          <div className="flex items-center gap-3 mb-1 animate-fade-in bg-slate-950/85 p-1.5 rounded-2xl border border-sky-400/50 backdrop-blur-md shadow-2xl">
-            <button
-              onTouchStart={(e) => {
-                e.stopPropagation();
-                onAscend?.(true);
-              }}
-              onTouchEnd={(e) => {
-                e.stopPropagation();
-                onAscend?.(false);
-              }}
-              onMouseDown={() => onAscend?.(true)}
-              onMouseUp={() => onAscend?.(false)}
-              className="flex items-center gap-1.5 rounded-xl bg-gradient-to-t from-sky-600 to-cyan-400 px-3.5 py-2 text-xs font-black text-slate-950 active:scale-95 shadow-lg border border-cyan-200"
-              title="Steigen (Hold to fly up)"
-            >
-              <span>⬆️</span> Steigen
-            </button>
-            <button
-              onTouchStart={(e) => {
-                e.stopPropagation();
-                onDescend?.(true);
-              }}
-              onTouchEnd={(e) => {
-                e.stopPropagation();
-                onDescend?.(false);
-              }}
-              onMouseDown={() => onDescend?.(true)}
-              onMouseUp={() => onDescend?.(false)}
-              className="flex items-center gap-1.5 rounded-xl bg-gradient-to-t from-blue-800 to-indigo-600 px-3.5 py-2 text-xs font-black text-white active:scale-95 shadow-lg border border-indigo-300"
-              title="Sinken (Hold to dive)"
-            >
-              <span>⬇️</span> Sinken
-            </button>
+        {/* 🏎️ MARIO KART / VEHICLE DRIVING TOUCH CONTROLS */}
+        {isDriving ? (
+          <div className="flex flex-col items-end gap-2.5 animate-fade-in">
+            {/* Top Row: Turbo Boost & Exit Car */}
+            <div className="flex items-center gap-2">
+              <button
+                onTouchStart={(e) => {
+                  e.stopPropagation();
+                  onSprintDodge(true);
+                }}
+                className="flex items-center gap-1.5 rounded-full bg-gradient-to-r from-cyan-500 to-blue-600 px-4 py-2 text-xs font-black text-white shadow-xl backdrop-blur-md active:scale-90 border border-cyan-300"
+                title="Nitro Turbo Boost (Shift)"
+              >
+                <Zap className="h-4 w-4" />
+                <span>TURBO</span>
+              </button>
+
+              <button
+                onTouchStart={(e) => {
+                  e.stopPropagation();
+                  if (onExitVehicle) onExitVehicle();
+                  else onInteract();
+                }}
+                onClick={() => {
+                  if (onExitVehicle) onExitVehicle();
+                  else onInteract();
+                }}
+                className="flex items-center gap-1.5 rounded-full bg-rose-600/90 px-4 py-2 text-xs font-black text-white shadow-xl backdrop-blur-md active:scale-90 border border-rose-300"
+                title="Aussteigen (E)"
+              >
+                <span>🚪</span>
+                <span>Aussteigen</span>
+              </button>
+            </div>
+
+            {/* Bottom Row: Brake/Reverse, Drift Power-Slide, Gas Forward */}
+            <div className="flex items-end gap-2.5">
+              {/* Brake / Reverse */}
+              <button
+                onTouchStart={(e) => {
+                  e.stopPropagation();
+                  onBrake?.(true);
+                  onMove(0, -1);
+                }}
+                onTouchEnd={(e) => {
+                  e.stopPropagation();
+                  onBrake?.(false);
+                  onMove(0, 0);
+                }}
+                onMouseDown={() => {
+                  onBrake?.(true);
+                  onMove(0, -1);
+                }}
+                onMouseUp={() => {
+                  onBrake?.(false);
+                  onMove(0, 0);
+                }}
+                className="flex h-14 w-14 flex-col items-center justify-center rounded-2xl bg-red-600/90 text-white shadow-xl backdrop-blur-md active:scale-90 border border-red-400 font-bold"
+                title="Bremse / Rückwärts (S)"
+              >
+                <span className="text-base">🛑</span>
+                <span className="text-[9px] font-black tracking-wider">BREMSE</span>
+              </button>
+
+              {/* Power-Slide Drift (Hold to charge sparks, release for mini-turbo!) */}
+              <button
+                onTouchStart={(e) => {
+                  e.stopPropagation();
+                  onJumpHold?.(true);
+                  onJumpGlide();
+                }}
+                onTouchEnd={(e) => {
+                  e.stopPropagation();
+                  onJumpHold?.(false);
+                }}
+                onMouseDown={() => {
+                  onJumpHold?.(true);
+                  onJumpGlide();
+                }}
+                onMouseUp={() => {
+                  onJumpHold?.(false);
+                }}
+                className="flex h-16 w-16 flex-col items-center justify-center rounded-2xl bg-gradient-to-tr from-amber-500 to-yellow-400 text-slate-950 shadow-2xl backdrop-blur-md active:scale-90 border border-yellow-200 font-black animate-pulse"
+                title="Power-Slide Drift (Space - Halten zum Driften, Loslassen für Mini-Turbo!)"
+              >
+                <span className="text-xl">⭐</span>
+                <span className="text-[10px] font-black uppercase">DRIFT</span>
+              </button>
+
+              {/* Gas Forward */}
+              <button
+                onTouchStart={(e) => {
+                  e.stopPropagation();
+                  onGas?.(true);
+                  onMove(0, 1);
+                }}
+                onTouchEnd={(e) => {
+                  e.stopPropagation();
+                  onGas?.(false);
+                  onMove(0, 0);
+                }}
+                onMouseDown={() => {
+                  onGas?.(true);
+                  onMove(0, 1);
+                }}
+                onMouseUp={() => {
+                  onGas?.(false);
+                  onMove(0, 0);
+                }}
+                className="flex h-18 w-18 flex-col items-center justify-center rounded-3xl bg-gradient-to-tr from-emerald-600 to-green-400 text-white shadow-2xl backdrop-blur-md active:scale-90 border-2 border-green-200 font-black"
+                title="Gas geben (W)"
+              >
+                <span className="text-2xl">🏎️</span>
+                <span className="text-xs font-black tracking-wider">GAS</span>
+              </button>
+            </div>
           </div>
+        ) : (
+          <>
+            {/* Soaring Flight Vertical Altitude Cluster (Ascend ⬆️ / Descend ⬇️) */}
+            {isFlying && (
+              <div className="flex items-center gap-3 mb-1 animate-fade-in bg-slate-950/85 p-1.5 rounded-2xl border border-sky-400/50 backdrop-blur-md shadow-2xl">
+                <button
+                  onTouchStart={(e) => {
+                    e.stopPropagation();
+                    onAscend?.(true);
+                  }}
+                  onTouchEnd={(e) => {
+                    e.stopPropagation();
+                    onAscend?.(false);
+                  }}
+                  onMouseDown={() => onAscend?.(true)}
+                  onMouseUp={() => onAscend?.(false)}
+                  className="flex items-center gap-1.5 rounded-xl bg-gradient-to-t from-sky-600 to-cyan-400 px-3.5 py-2 text-xs font-black text-slate-950 active:scale-95 shadow-lg border border-cyan-200"
+                  title="Steigen (Hold to fly up)"
+                >
+                  <span>⬆️</span> Steigen
+                </button>
+                <button
+                  onTouchStart={(e) => {
+                    e.stopPropagation();
+                    onDescend?.(true);
+                  }}
+                  onTouchEnd={(e) => {
+                    e.stopPropagation();
+                    onDescend?.(false);
+                  }}
+                  onMouseDown={() => onDescend?.(true)}
+                  onMouseUp={() => onDescend?.(false)}
+                  className="flex items-center gap-1.5 rounded-xl bg-gradient-to-t from-blue-800 to-indigo-600 px-3.5 py-2 text-xs font-black text-white active:scale-95 shadow-lg border border-indigo-300"
+                  title="Sinken (Hold to dive)"
+                >
+                  <span>⬇️</span> Sinken
+                </button>
+              </div>
+            )}
+
+            {/* Bottom Cluster: Jump/Glide, Sprint/Dodge, Attack */}
+            <div className="flex items-end gap-3">
+              <button
+                onTouchStart={(e) => {
+                  e.stopPropagation();
+                  onJumpHold?.(true);
+                  onJumpGlide();
+                }}
+                onTouchEnd={(e) => {
+                  e.stopPropagation();
+                  onJumpHold?.(false);
+                }}
+                onTouchCancel={(e) => {
+                  e.stopPropagation();
+                  onJumpHold?.(false);
+                }}
+                onMouseDown={() => {
+                  onJumpHold?.(true);
+                  onJumpGlide();
+                }}
+                onMouseUp={() => {
+                  onJumpHold?.(false);
+                }}
+                onClick={onJumpGlide}
+                className="flex h-14 w-14 items-center justify-center rounded-full bg-cyan-500/90 text-white shadow-xl backdrop-blur-md active:scale-90"
+                title="Jump / Paraglide (Space - Halten zum Gleiten, Loslassen zum schnellen Fallen)"
+              >
+                <Wind className="h-7 w-7" />
+              </button>
+
+              <button
+                onTouchStart={(e) => {
+                  e.stopPropagation();
+                  const next = !isSprinting;
+                  setIsSprinting(next);
+                  onSprintDodge(next);
+                }}
+                onClick={() => {
+                  const next = !isSprinting;
+                  setIsSprinting(next);
+                  onSprintDodge(next);
+                }}
+                className={`flex h-12 w-12 items-center justify-center rounded-full shadow-xl backdrop-blur-md active:scale-90 ${
+                  isSprinting ? 'bg-amber-400 text-slate-950 font-bold' : 'bg-slate-700/90 text-white'
+                }`}
+                title="Sprint / Dodge Roll (Shift/C)"
+              >
+                <Zap className="h-6 w-6" />
+              </button>
+
+              <button
+                onTouchStart={(e) => {
+                  e.stopPropagation();
+                  onAttack();
+                }}
+                onClick={onAttack}
+                className="flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-tr from-emerald-600 to-green-400 text-white shadow-2xl backdrop-blur-md active:scale-90"
+                title="Attack (F)"
+              >
+                <Sword className="h-9 w-9" />
+              </button>
+            </div>
+          </>
         )}
-
-        {/* Bottom Cluster: Jump/Glide, Sprint/Dodge, Attack */}
-        <div className="flex items-end gap-3">
-
-          <button
-            onTouchStart={(e) => {
-              e.stopPropagation();
-              onJumpHold?.(true);
-              onJumpGlide();
-            }}
-            onTouchEnd={(e) => {
-              e.stopPropagation();
-              onJumpHold?.(false);
-            }}
-            onTouchCancel={(e) => {
-              e.stopPropagation();
-              onJumpHold?.(false);
-            }}
-            onMouseDown={() => {
-              onJumpHold?.(true);
-              onJumpGlide();
-            }}
-            onMouseUp={() => {
-              onJumpHold?.(false);
-            }}
-            onClick={onJumpGlide}
-            className="flex h-14 w-14 items-center justify-center rounded-full bg-cyan-500/90 text-white shadow-xl backdrop-blur-md active:scale-90"
-            title="Jump / Paraglide (Space - Halten zum Gleiten, Loslassen zum schnellen Fallen)"
-          >
-            <Wind className="h-7 w-7" />
-          </button>
-
-          <button
-            onTouchStart={(e) => {
-              e.stopPropagation();
-              const next = !isSprinting;
-              setIsSprinting(next);
-              onSprintDodge(next);
-            }}
-            onClick={() => {
-              const next = !isSprinting;
-              setIsSprinting(next);
-              onSprintDodge(next);
-            }}
-            className={`flex h-12 w-12 items-center justify-center rounded-full shadow-xl backdrop-blur-md active:scale-90 ${
-              isSprinting ? 'bg-amber-400 text-slate-950 font-bold' : 'bg-slate-700/90 text-white'
-            }`}
-            title="Sprint / Dodge Roll (Shift/C)"
-          >
-            <Zap className="h-6 w-6" />
-          </button>
-
-          <button
-            onTouchStart={(e) => {
-              e.stopPropagation();
-              onAttack();
-            }}
-            onClick={onAttack}
-            className="flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-tr from-emerald-600 to-green-400 text-white shadow-2xl backdrop-blur-md active:scale-90"
-            title="Attack (F)"
-          >
-            <Sword className="h-9 w-9" />
-          </button>
-        </div>
       </div>
       )}
     </div>
