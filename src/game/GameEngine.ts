@@ -947,6 +947,57 @@ export class GameEngine {
   }
 
   /**
+   * Action: Heavy Attack / Spin Attack / Power Smash (Right click or secondary strike)
+   */
+  public performHeavyAttack(): string {
+    if (this.physics.attackCooldown > 0.08) return '';
+    this.physics.actionState = 'ATTACK_HEAVY';
+    this.physics.attackCooldown = 0.58;
+    audioEngine.playSwordSlash();
+
+    const equippedTool =
+      this.inventory.find((i) => i.equipped && (i.type === 'tool' || i.type === 'weapon')) ||
+      this.inventory.find((i) => i.equipped);
+
+    const playerPos = this.physics.position;
+    let hitCount = 0;
+
+    // Check enemies in wider 360-degree spin radius around player
+    this.enemyManager.enemies.forEach((enemy) => {
+      if (enemy.state.state === 'DEAD') return;
+      const ePos = new THREE.Vector3(enemy.state.position.x, enemy.state.position.y, enemy.state.position.z);
+      const dist = ePos.distanceTo(playerPos);
+
+      if (dist < 4.2) {
+        hitCount++;
+        const baseDmg = equippedTool?.attackPower || 16;
+        const dmg = Math.floor(baseDmg * 1.85) + Math.floor(Math.random() * 10);
+        enemy.state.health -= dmg;
+        audioEngine.playHitImpact();
+        this.addDamageText(`💥 -${dmg}`, ePos, '#ef4444', true);
+
+        if (enemy.state.health <= 0) {
+          enemy.state.state = 'DEAD';
+          const isTalus = enemy.state.type === 'stone_talus';
+          const isBoss = enemy.state.type === 'stone_guardian' || isTalus;
+          const xpGain = isBoss ? 150 : 35;
+          const rupeeGain = isTalus ? 50 : isBoss ? 45 : 20;
+          this.stats.xp += xpGain;
+          this.stats.rupees += rupeeGain;
+          this.collectibleManager.spawnRupee(ePos.x, ePos.y + 0.5, ePos.z, rupeeGain);
+          if (this.onToastMessage) {
+            this.onToastMessage(`⚔️ ${enemy.state.name} mit Schwerem Schlag besiegt! (+${rupeeGain} Rubine)`);
+          }
+        }
+      }
+    });
+
+    const msg = hitCount > 0 ? `💥 Schwerer Wirbelschlag! (${hitCount} Feinde getroffen)` : '⚔️ Schwerer Hieb ausgeführt!';
+    if (this.onToastMessage) this.onToastMessage(msg);
+    return msg;
+  }
+
+  /**
    * Action: Mine resource node or Dig terrain with equipped tool
    */
   public mineOrHarvest(): string {

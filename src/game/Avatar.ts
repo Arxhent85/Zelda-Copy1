@@ -1110,61 +1110,136 @@ export class AvatarHero {
     }
 
     if (variant === 'princess_zelda') {
-      // --- PRINCESS ZELDA ---
-      // Royal Gold Tiara with Sapphire Drop Gemstone
-      const tiaraBand = new THREE.Mesh(new THREE.TorusGeometry(0.2, 0.012, 8, 24, Math.PI * 0.7), this.goldMat);
-      tiaraBand.position.set(0, 0.08, 0.02);
-      tiaraBand.rotation.x = -0.3;
+      // --- PRINCESS ZELDA (ROYAL PRIESTESS OF WISDOM) ---
+      // 1. Full Golden Crown Hair Volume (covers the cranium completely!)
+      const crownGeo = new THREE.SphereGeometry(0.204, 32, 24);
+      crownGeo.scale(1.03, 1.03, 1.06);
+      const crownMesh = new THREE.Mesh(crownGeo, this.hairMat);
+      crownMesh.position.set(0, 0.052, -0.056);
+      crownMesh.castShadow = true;
+      this.headVisuals.add(crownMesh);
+
+      // Nape hair volume hugging back of skull down to neck
+      const napeGeo = new THREE.CylinderGeometry(0.168, 0.132, 0.18, 24);
+      napeGeo.scale(1.0, 1.0, 0.88);
+      const napeMesh = new THREE.Mesh(napeGeo, this.darkHairMat);
+      napeMesh.position.set(0, -0.076, -0.068);
+      napeMesh.rotation.x = -0.22;
+      napeMesh.castShadow = true;
+      this.headVisuals.add(napeMesh);
+
+      // 2. Delicate Royal Center-Parted Bangs (cascading DOWN over forehead)
+      const zeldaBangs = [
+        { x: -0.034, y: 0.128, z: 0.166, rx: 2.82, ry: -0.10, rz: 0.24, w: 0.036, h: 0.17, mat: this.hairMat },
+        { x: -0.072, y: 0.120, z: 0.158, rx: 2.84, ry: -0.18, rz: 0.36, w: 0.038, h: 0.19, mat: this.hairHighlightMat },
+        { x: -0.112, y: 0.108, z: 0.146, rx: 2.86, ry: -0.26, rz: 0.48, w: 0.036, h: 0.21, mat: this.hairMat },
+        { x: 0.034, y: 0.128, z: 0.166, rx: 2.82, ry: 0.10, rz: -0.24, w: 0.036, h: 0.17, mat: this.hairMat },
+        { x: 0.072, y: 0.120, z: 0.158, rx: 2.84, ry: 0.18, rz: -0.36, w: 0.038, h: 0.19, mat: this.hairHighlightMat },
+        { x: 0.112, y: 0.108, z: 0.146, rx: 2.86, ry: 0.26, rz: -0.48, w: 0.036, h: 0.21, mat: this.hairMat },
+      ];
+      for (const b of zeldaBangs) {
+        const bang = new THREE.Mesh(new THREE.ConeGeometry(b.w, b.h, 10), b.mat);
+        bang.scale.set(1.0, 1.0, 0.45);
+        bang.position.set(b.x, b.y, b.z);
+        bang.rotation.set(b.rx, b.ry, b.rz);
+        bang.castShadow = true;
+        this.headVisuals.add(bang);
+      }
+
+      // 3. Royal Gold Tiara Diadem with Sapphire Drop Gemstone
+      const tiaraBand = new THREE.Mesh(new THREE.TorusGeometry(0.202, 0.010, 8, 24, Math.PI * 0.65), this.goldMat);
+      tiaraBand.position.set(0, 0.092, 0.065);
+      tiaraBand.rotation.x = -0.24;
       this.headVisuals.add(tiaraBand);
 
-      const tiaraCrest = new THREE.Mesh(new THREE.ConeGeometry(0.03, 0.06, 3), this.goldMat);
-      tiaraCrest.position.set(0, 0.15, 0.185);
-      tiaraCrest.rotation.x = 0.2;
+      const tiaraCrest = new THREE.Mesh(new THREE.ConeGeometry(0.032, 0.068, 3), this.goldMat);
+      tiaraCrest.position.set(0, 0.162, 0.165);
+      tiaraCrest.rotation.x = 0.18;
       this.headVisuals.add(tiaraCrest);
 
-      const tiaraSapphire = new THREE.Mesh(new THREE.SphereGeometry(0.012, 8, 8), new THREE.MeshStandardMaterial({ color: 0x0284c7, roughness: 0.1 }));
-      tiaraSapphire.position.set(0, 0.125, 0.19);
+      const tiaraSapphire = new THREE.Mesh(new THREE.SphereGeometry(0.014, 10, 10), new THREE.MeshStandardMaterial({ color: 0x0284c7, roughness: 0.1, metalness: 0.2 }));
+      tiaraSapphire.position.set(0, 0.140, 0.172);
       this.headVisuals.add(tiaraSapphire);
 
-      // Long Elven Ears with Sapphire Drop Earrings
+      // 4. Long Elven Ears with Sapphire Drop Earrings
       for (const side of [-1, 1]) {
-        const ear = new THREE.Mesh(new THREE.ConeGeometry(0.045, 0.25, 12), this.skinMat);
-        ear.position.set(side * 0.18, 0.01, -0.02);
-        ear.rotation.set(0.1, side * -0.4, side * 1.35);
+        const ear = new THREE.Mesh(new THREE.ConeGeometry(0.040, 0.24, 12), this.skinMat);
+        ear.position.set(side * 0.172, 0.005, -0.035);
+        ear.rotation.set(0.12, side * -0.65, side * 1.18);
         this.headVisuals.add(ear);
 
-        const dropEarring = new THREE.Mesh(new THREE.SphereGeometry(0.009, 8, 8), new THREE.MeshStandardMaterial({ color: 0x38bdf8, roughness: 0.2 }));
-        dropEarring.position.set(side * 0.22, -0.05, -0.02);
+        const dropEarring = new THREE.Mesh(new THREE.SphereGeometry(0.010, 8, 8), new THREE.MeshStandardMaterial({ color: 0x38bdf8, roughness: 0.15 }));
+        dropEarring.position.set(side * 0.22, -0.065, -0.02);
         this.headVisuals.add(dropEarring);
 
-        // Long Braided Front Locks with Gold Ribbons
-        const braid = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.02, 0.42, 10), this.hairMat);
-        braid.position.set(side * 0.15, -0.15, 0.14);
-        braid.rotation.set(0.1, 0, side * -0.08);
+        // Long Braided Front Locks cascading gracefully from temples down past shoulders
+        const braid = new THREE.Mesh(new THREE.CylinderGeometry(0.024, 0.018, 0.46, 10), this.hairMat);
+        braid.position.set(side * 0.155, -0.16, 0.10);
+        braid.rotation.set(0.08, 0, side * -0.06);
         this.headVisuals.add(braid);
 
-        const ribbon = new THREE.Mesh(new THREE.TorusGeometry(0.025, 0.008, 6, 12), this.goldMat);
-        ribbon.position.set(side * 0.15, -0.22, 0.15);
+        const ribbon = new THREE.Mesh(new THREE.TorusGeometry(0.024, 0.008, 6, 12), this.goldMat);
+        ribbon.position.set(side * 0.155, -0.24, 0.105);
         this.headVisuals.add(ribbon);
       }
 
-      // Elegant Royal Plait Cascade
-      const cascade = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.04, 0.65, 12), this.hairMat);
-      cascade.position.set(0, -0.32, 0.04);
-      cascade.rotation.x = -0.15;
+      // 5. Elegant Royal Plait Cascade down the back
+      const cascade = new THREE.Mesh(new THREE.CylinderGeometry(0.065, 0.038, 0.70, 12), this.hairMat);
+      cascade.position.set(0, -0.34, 0.02);
+      cascade.rotation.x = -0.12;
       this.hairPonytail.add(cascade);
 
+      const cascadeRibbon = new THREE.Mesh(new THREE.TorusGeometry(0.05, 0.012, 6, 16), this.goldMat);
+      cascadeRibbon.position.set(0, -0.06, 0.01);
+      cascadeRibbon.rotation.x = Math.PI / 2;
+      this.hairPonytail.add(cascadeRibbon);
+
     } else if (variant === 'kitsune_beast') {
-      // --- KITSUNE FOX-KIN ---
-      // Fluffy 3D Pointed Fox Ears on top of head
-      const foxFurMat = new THREE.MeshStandardMaterial({ color: 0xd97706, roughness: 0.7 });
-      const innerFurMat = new THREE.MeshStandardMaterial({ color: 0xfbcfe8, roughness: 0.85 });
+      // --- KITSUNE FOX-KIN HUNTRESS (FEMININE FOX-GIRL WARRIOR) ---
+      // 1. Fiery Sunset-Amber Crown Hair Volume
+      const crownGeo = new THREE.SphereGeometry(0.204, 32, 24);
+      crownGeo.scale(1.03, 1.03, 1.06);
+      const crownMesh = new THREE.Mesh(crownGeo, this.hairMat);
+      crownMesh.position.set(0, 0.052, -0.056);
+      crownMesh.castShadow = true;
+      this.headVisuals.add(crownMesh);
+
+      // Nape hair volume hugging back of skull
+      const napeGeo = new THREE.CylinderGeometry(0.168, 0.132, 0.18, 24);
+      napeGeo.scale(1.0, 1.0, 0.88);
+      const napeMesh = new THREE.Mesh(napeGeo, this.darkHairMat);
+      napeMesh.position.set(0, -0.076, -0.068);
+      napeMesh.rotation.x = -0.22;
+      napeMesh.castShadow = true;
+      this.headVisuals.add(napeMesh);
+
+      // 2. Layered Anime Bangs (cascading DOWN over forehead, NOT up like spikes!)
+      const kitsuneBangs = [
+        { x: -0.032, y: 0.128, z: 0.165, rx: 2.82, ry: -0.10, rz: 0.22, w: 0.038, h: 0.18, mat: this.hairMat },
+        { x: -0.070, y: 0.120, z: 0.158, rx: 2.84, ry: -0.18, rz: 0.35, w: 0.040, h: 0.20, mat: this.hairHighlightMat },
+        { x: -0.110, y: 0.106, z: 0.146, rx: 2.86, ry: -0.25, rz: 0.48, w: 0.038, h: 0.22, mat: this.hairMat },
+        { x: 0.032, y: 0.128, z: 0.165, rx: 2.82, ry: 0.10, rz: -0.22, w: 0.038, h: 0.18, mat: this.hairMat },
+        { x: 0.070, y: 0.120, z: 0.158, rx: 2.84, ry: 0.18, rz: -0.35, w: 0.040, h: 0.20, mat: this.hairHighlightMat },
+        { x: 0.110, y: 0.106, z: 0.146, rx: 2.86, ry: 0.25, rz: -0.48, w: 0.038, h: 0.22, mat: this.hairMat },
+      ];
+      for (const b of kitsuneBangs) {
+        const bang = new THREE.Mesh(new THREE.ConeGeometry(b.w, b.h, 10), b.mat);
+        bang.scale.set(1.0, 1.0, 0.45);
+        bang.position.set(b.x, b.y, b.z);
+        bang.rotation.set(b.rx, b.ry, b.rz);
+        bang.castShadow = true;
+        this.headVisuals.add(bang);
+      }
+
+      // 3. Fluffy 3D Sculpted Fox Ears naturally mounted on top of head
+      const foxFurMat = new THREE.MeshStandardMaterial({ color: 0xea580c, roughness: 0.7 });
+      const innerFurMat = new THREE.MeshStandardMaterial({ color: 0xfce7f3, roughness: 0.85 });
       const earTipMat = new THREE.MeshStandardMaterial({ color: 0x18181b, roughness: 0.8 });
 
       for (const side of [-1, 1]) {
         const earGroup = new THREE.Group();
-        earGroup.position.set(side * 0.12, 0.24, 0.04);
-        earGroup.rotation.set(-0.15, side * 0.25, side * -0.4);
+        earGroup.position.set(side * 0.125, 0.22, 0.01);
+        earGroup.rotation.set(-0.15, side * 0.22, side * -0.38);
 
         const outerEar = new THREE.Mesh(new THREE.ConeGeometry(0.075, 0.24, 8), foxFurMat);
         outerEar.scale.set(1.1, 1.0, 0.5);
@@ -1183,87 +1258,144 @@ export class AvatarHero {
         this.headVisuals.add(earGroup);
       }
 
-      // Wild Spiky Bangs
-      for (let i = -2; i <= 2; i++) {
-        const spike = new THREE.Mesh(new THREE.ConeGeometry(0.04, 0.18, 6), this.hairMat);
-        spike.position.set(i * 0.065, 0.14, 0.19);
-        spike.rotation.set(0.4, 0, i * -0.2);
-        this.headVisuals.add(spike);
-      }
-
-      // Wild Mane Ponytail
-      const mane = new THREE.Mesh(new THREE.ConeGeometry(0.09, 0.42, 10), this.hairMat);
-      mane.position.set(0, -0.18, 0.05);
-      mane.rotation.x = -0.3;
+      // 4. Flowing Fox Mane / High Ponytail with Crimson Cord
+      const mane = new THREE.Mesh(new THREE.ConeGeometry(0.095, 0.48, 10), this.hairMat);
+      mane.position.set(0, -0.22, 0.04);
+      mane.rotation.x = -0.25;
       this.hairPonytail.add(mane);
 
-      // Fluffy Multi-Tier Kitsune Fox Tail attached to waist
+      const maneTie = new THREE.Mesh(new THREE.TorusGeometry(0.045, 0.012, 6, 14), new THREE.MeshStandardMaterial({ color: 0xdc2626 }));
+      maneTie.position.set(0, 0.02, -0.02);
+      this.hairPonytail.add(maneTie);
+
+      // 5. Plush, Seamless Connected Fox Tail (curved and continuous, NO disconnected blobs!)
       const whiteFurMat = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.8 });
-      const tailBase = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.12, 0.28, 12), foxFurMat);
-      tailBase.position.set(0, 0.08, -0.12);
-      tailBase.rotation.x = -0.7;
-      this.tail.add(tailBase);
+      const tailGroup = new THREE.Group();
 
-      const tailMid = new THREE.Mesh(new THREE.SphereGeometry(0.14, 14, 12), foxFurMat);
-      tailMid.scale.set(0.9, 1.3, 0.9);
-      tailMid.position.set(0, 0.22, -0.28);
-      tailMid.rotation.x = -0.3;
-      this.tail.add(tailMid);
+      const tailBase = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.13, 0.28, 12), foxFurMat);
+      tailBase.position.set(0, 0.06, -0.10);
+      tailBase.rotation.x = -0.55;
+      tailGroup.add(tailBase);
 
-      const tailTip = new THREE.Mesh(new THREE.ConeGeometry(0.11, 0.32, 12), whiteFurMat);
-      tailTip.position.set(0, 0.42, -0.38);
-      tailTip.rotation.x = 0.4;
-      this.tail.add(tailTip);
+      const tailMid = new THREE.Mesh(new THREE.SphereGeometry(0.16, 16, 12), foxFurMat);
+      tailMid.scale.set(0.95, 1.35, 1.05);
+      tailMid.position.set(0, 0.24, -0.26);
+      tailMid.rotation.x = -0.25;
+      tailGroup.add(tailMid);
+
+      const tailUpper = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.12, 0.28, 12), foxFurMat);
+      tailUpper.position.set(0, 0.38, -0.34);
+      tailUpper.rotation.x = 0.15;
+      tailGroup.add(tailUpper);
+
+      const tailTip = new THREE.Mesh(new THREE.ConeGeometry(0.13, 0.34, 12), whiteFurMat);
+      tailTip.position.set(0, 0.56, -0.38);
+      tailTip.rotation.x = 0.38;
+      tailGroup.add(tailTip);
+
+      this.tail.add(tailGroup);
 
     } else if (variant === 'dragon_warrior') {
-      // --- DRAGON WARRIOR ---
-      // Curved Obsidian Horns
+      // --- DRAGON WARRIOR (VOLCANIC DRACONIC CHAMPION) ---
+      // 1. Obsidian Dragon Scale Crown (covers the skull completely!)
+      const scaleCrownGeo = new THREE.SphereGeometry(0.204, 32, 24);
+      scaleCrownGeo.scale(1.03, 1.03, 1.06);
+      const scaleCrownMesh = new THREE.Mesh(scaleCrownGeo, this.hairMat);
+      scaleCrownMesh.position.set(0, 0.052, -0.056);
+      scaleCrownMesh.castShadow = true;
+      this.headVisuals.add(scaleCrownMesh);
+
+      // Nape scales
+      const napeGeo = new THREE.CylinderGeometry(0.168, 0.132, 0.18, 24);
+      napeGeo.scale(1.0, 1.0, 0.88);
+      const napeMesh = new THREE.Mesh(napeGeo, this.darkHairMat);
+      napeMesh.position.set(0, -0.076, -0.068);
+      napeMesh.rotation.x = -0.22;
+      napeMesh.castShadow = true;
+      this.headVisuals.add(napeMesh);
+
+      // 2. Continuous Sweeping Obsidian Horns with Glowing Magma Tips (ZERO FLOATING PIECES)
       const hornMat = new THREE.MeshStandardMaterial({ color: 0x09090b, roughness: 0.3, metalness: 0.6 });
-      const hornGlowMat = new THREE.MeshStandardMaterial({ color: 0xf97316, emissive: 0xef4444, emissiveIntensity: 2.2 });
+      const hornGlowMat = new THREE.MeshStandardMaterial({ color: 0xf97316, emissive: 0xef4444, emissiveIntensity: 2.5 });
 
       for (const side of [-1, 1]) {
-        const hornBase = new THREE.Mesh(new THREE.CylinderGeometry(0.038, 0.048, 0.22, 10), hornMat);
-        hornBase.position.set(side * 0.14, 0.18, 0.04);
-        hornBase.rotation.set(-0.4, side * 0.3, side * 0.55);
-        this.headVisuals.add(hornBase);
+        // Single parent group for each horn: guarantees 100% connected, continuous geometry!
+        const hornGroup = new THREE.Group();
+        hornGroup.position.set(side * 0.13, 0.16, 0.02);
+        hornGroup.rotation.set(-0.35, side * 0.25, side * 0.48);
 
-        const hornTip = new THREE.Mesh(new THREE.ConeGeometry(0.034, 0.24, 8), hornGlowMat);
-        hornTip.position.set(side * 0.22, 0.32, -0.06);
-        hornTip.rotation.set(-0.8, side * 0.3, side * 0.4);
-        this.headVisuals.add(hornTip);
+        // Lower base attached to skull
+        const hornBase = new THREE.Mesh(new THREE.CylinderGeometry(0.040, 0.052, 0.22, 10), hornMat);
+        hornBase.position.set(0, 0.11, 0);
+        hornGroup.add(hornBase);
 
-        // Dragon Fin Ears
+        // Middle segment curving back
+        const hornMid = new THREE.Mesh(new THREE.CylinderGeometry(0.030, 0.040, 0.20, 10), hornMat);
+        hornMid.position.set(0, 0.30, -0.04);
+        hornMid.rotation.x = -0.32;
+        hornGroup.add(hornMid);
+
+        // Glowing molten tip seamlessly connected to the end of the middle segment!
+        const hornTip = new THREE.Mesh(new THREE.ConeGeometry(0.030, 0.24, 8), hornGlowMat);
+        hornTip.position.set(0, 0.48, -0.13);
+        hornTip.rotation.x = -0.65;
+        hornGroup.add(hornTip);
+
+        this.headVisuals.add(hornGroup);
+
+        // Dragon Fin Ears along jawline
         const finEar = new THREE.Mesh(new THREE.ConeGeometry(0.035, 0.22, 5), hornMat);
-        finEar.position.set(side * 0.2, 0.02, -0.04);
-        finEar.rotation.set(0.2, side * -0.5, side * 1.4);
+        finEar.position.set(side * 0.19, 0.01, -0.04);
+        finEar.rotation.set(0.18, side * -0.5, side * 1.35);
         this.headVisuals.add(finEar);
       }
 
-      // Spiked Crest
-      const crest = new THREE.Mesh(new THREE.ConeGeometry(0.06, 0.35, 6), this.hairMat);
-      crest.position.set(0, -0.15, 0.02);
-      crest.rotation.x = -0.4;
-      this.hairPonytail.add(crest);
-
-      // Segmented Dragon Tail with Spines & Spear Tip
-      const scaleMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.4, metalness: 0.5 });
-      const spineMat = new THREE.MeshStandardMaterial({ color: 0xdc2626, roughness: 0.3 });
-
-      for (let s = 0; s < 4; s++) {
-        const seg = new THREE.Mesh(new THREE.CylinderGeometry(0.07 - s * 0.012, 0.08 - s * 0.012, 0.18, 8), scaleMat);
-        seg.position.set(0, -s * 0.14, -0.1 - s * 0.12);
-        seg.rotation.x = -0.8 - s * 0.15;
-        this.tail.add(seg);
-
-        const spine = new THREE.Mesh(new THREE.ConeGeometry(0.025, 0.08, 4), spineMat);
-        spine.position.set(0, -s * 0.14 + 0.06, -0.1 - s * 0.12);
-        spine.rotation.x = -0.4;
-        this.tail.add(spine);
+      // 3. Spined Dragon Ridge Spines along the centerline of the skull
+      for (let sp = 0; sp < 4; sp++) {
+        const spine = new THREE.Mesh(new THREE.ConeGeometry(0.028, 0.10, 4), hornGlowMat);
+        spine.position.set(0, 0.15 - sp * 0.06, 0.12 - sp * 0.08);
+        spine.rotation.x = 0.35 - sp * 0.3;
+        this.headVisuals.add(spine);
       }
 
-      const spearTip = new THREE.Mesh(new THREE.ConeGeometry(0.06, 0.24, 4), spineMat);
-      spearTip.position.set(0, -0.58, -0.56);
-      spearTip.rotation.x = -1.2;
+      // Spiked Crest at back of skull
+      const crest = new THREE.Mesh(new THREE.ConeGeometry(0.07, 0.42, 6), this.hairMat);
+      crest.position.set(0, -0.18, 0.02);
+      crest.rotation.x = -0.35;
+      this.hairPonytail.add(crest);
+
+      // 4. Continuous Overlapping Serpentine Dragon Tail (ZERO GAPS)
+      const scaleMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.4, metalness: 0.5 });
+      const spineMat = new THREE.MeshStandardMaterial({ color: 0xdc2626, roughness: 0.3, emissive: 0x7f1d1d, emissiveIntensity: 0.8 });
+
+      // Overlapping articulated segments
+      let prevTailY = 0;
+      let prevTailZ = 0;
+      for (let s = 0; s < 5; s++) {
+        const rTop = 0.08 - s * 0.012;
+        const rBottom = 0.09 - s * 0.012;
+        const segLen = 0.20;
+        const seg = new THREE.Mesh(new THREE.CylinderGeometry(rTop, rBottom, segLen, 8), scaleMat);
+        const curY = -s * 0.13;
+        const curZ = -0.08 - s * 0.14;
+        seg.position.set(0, curY, curZ);
+        seg.rotation.x = -0.7 - s * 0.10;
+        this.tail.add(seg);
+
+        // Dorsal dragon spine firmly on the back of each segment
+        const dSpine = new THREE.Mesh(new THREE.ConeGeometry(0.026, 0.09, 4), spineMat);
+        dSpine.position.set(0, curY + 0.07, curZ + 0.02);
+        dSpine.rotation.x = -0.35;
+        this.tail.add(dSpine);
+
+        prevTailY = curY;
+        prevTailZ = curZ;
+      }
+
+      // Heavy armored obsidian spear tip blade seamlessly attached at end
+      const spearTip = new THREE.Mesh(new THREE.ConeGeometry(0.065, 0.28, 4), spineMat);
+      spearTip.position.set(0, prevTailY - 0.14, prevTailZ - 0.14);
+      spearTip.rotation.x = -1.15;
       this.tail.add(spearTip);
 
     } else {
@@ -1407,52 +1539,129 @@ export class AvatarHero {
 
     // 5. Variant Specific Torso Accessories
     if (variant === 'princess_zelda') {
-      // Royal Sapphire Corslet Sash & Golden Filigree
-      const sash = new THREE.Mesh(new THREE.BoxGeometry(0.58, 0.35, 0.02), new THREE.MeshStandardMaterial({ color: 0x1d4ed8, roughness: 0.3 }));
-      sash.position.set(0, 0.05, 0.185);
-      this.torsoVisuals.add(sash);
+      // --- PRINCESS ZELDA ROYAL GOWN & FEMININE SILHOUETTE ---
+      // Royal Bodice with gold filigree
+      const bodice = new THREE.Mesh(new THREE.BoxGeometry(0.60, 0.50, 0.38), new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.3 }));
+      bodice.position.set(0, 0.14, 0.005);
+      this.torsoVisuals.add(bodice);
 
-      const triforceMedallion = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.08, 3), this.goldMat);
-      triforceMedallion.position.set(0, 0.08, 0.198);
+      // Royal blue silk breastplate tabard with gold Triforce crest
+      const blueTabard = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.54, 0.03), new THREE.MeshStandardMaterial({ color: 0x1d4ed8, roughness: 0.35 }));
+      blueTabard.position.set(0, 0.12, 0.190);
+      this.torsoVisuals.add(blueTabard);
+
+      const triforceMedallion = new THREE.Mesh(new THREE.ConeGeometry(0.045, 0.08, 3), this.goldMat);
+      triforceMedallion.position.set(0, 0.18, 0.208);
+      triforceMedallion.rotation.z = Math.PI;
       this.torsoVisuals.add(triforceMedallion);
 
-      const royalBelt = new THREE.Mesh(new THREE.BoxGeometry(0.64, 0.1, 0.39), this.goldMat);
-      royalBelt.position.y = -0.28;
+      // Flared Royal Silk Gown / Overskirt (from waist down over legs with graceful open front slit)
+      const skirtGeo = new THREE.CylinderGeometry(0.32, 0.46, 0.60, 16, 1, true, 0.3, Math.PI * 2 - 0.6);
+      const skirtMat = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.45, side: THREE.DoubleSide });
+      const skirt = new THREE.Mesh(skirtGeo, skirtMat);
+      skirt.position.set(0, -0.42, 0.02);
+      this.torsoVisuals.add(skirt);
+
+      // Skirt Gold Hem Border
+      const hemGeo = new THREE.TorusGeometry(0.45, 0.012, 6, 24, Math.PI * 1.6);
+      const hem = new THREE.Mesh(hemGeo, this.goldMat);
+      hem.position.set(0, -0.71, 0.02);
+      hem.rotation.x = Math.PI / 2;
+      this.torsoVisuals.add(hem);
+
+      // Royal Gold Filigree Belt & Medallion
+      const royalBelt = new THREE.Mesh(new THREE.BoxGeometry(0.64, 0.10, 0.40), this.goldMat);
+      royalBelt.position.y = -0.26;
       this.torsoVisuals.add(royalBelt);
 
+      // Hanging royal ceremonial sash with gold embroidery
+      const sash = new THREE.Mesh(new THREE.BoxGeometry(0.20, 0.46, 0.02), new THREE.MeshStandardMaterial({ color: 0x1d4ed8, roughness: 0.35 }));
+      sash.position.set(0, -0.48, 0.205);
+      this.torsoVisuals.add(sash);
+
+      const sashTrim = new THREE.Mesh(new THREE.BoxGeometry(0.20, 0.04, 0.025), this.goldMat);
+      sashTrim.position.set(0, -0.70, 0.205);
+      this.torsoVisuals.add(sashTrim);
+
+      // Puffed Royal Shoulder Epaulettes in White Silk with Gold Trim
+      for (const side of [-1, 1]) {
+        const epaulette = new THREE.Mesh(new THREE.TorusGeometry(0.12, 0.04, 8, 16), this.goldMat);
+        epaulette.position.set(side * 0.36, 0.36, 0);
+        epaulette.rotation.y = Math.PI / 2;
+        this.torsoVisuals.add(epaulette);
+      }
+
     } else if (variant === 'kitsune_beast') {
-      // Fang Talisman Necklace & Rogue Belt
+      // --- KITSUNE HUNTRESS VEST & CRIMSON SASH ---
+      // Form-fitting leather vest in obsidian and crimson
+      const vest = new THREE.Mesh(new THREE.BoxGeometry(0.58, 0.48, 0.38), new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.4 }));
+      vest.position.set(0, 0.14, 0.005);
+      this.torsoVisuals.add(vest);
+
+      // Fang Talisman Necklace laid cleanly across collar
       const boneMat = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.5 });
       for (let f = -2; f <= 2; f++) {
-        const fang = new THREE.Mesh(new THREE.ConeGeometry(0.02, 0.08, 6), boneMat);
-        fang.position.set(f * 0.07, 0.28 - Math.abs(f) * 0.02, 0.19);
+        const fang = new THREE.Mesh(new THREE.ConeGeometry(0.018, 0.07, 6), boneMat);
+        fang.position.set(f * 0.065, 0.30 - Math.abs(f) * 0.015, 0.195);
         fang.rotation.x = Math.PI;
         this.torsoVisuals.add(fang);
       }
 
-      const rogueBelt = new THREE.Mesh(new THREE.BoxGeometry(0.65, 0.12, 0.39), this.darkLeatherMat);
-      rogueBelt.position.y = -0.28;
-      this.torsoVisuals.add(rogueBelt);
+      // Crimson Obi Sash with Golden Magatama Buckle
+      const obi = new THREE.Mesh(new THREE.BoxGeometry(0.64, 0.14, 0.40), new THREE.MeshStandardMaterial({ color: 0x991b1b, roughness: 0.5 }));
+      obi.position.y = -0.26;
+      this.torsoVisuals.add(obi);
 
-    } else if (variant === 'dragon_warrior') {
-      // Glowing Molten Magma Rune Core
-      const magmaCore = new THREE.Mesh(new THREE.CylinderGeometry(0.065, 0.065, 0.02, 16), new THREE.MeshStandardMaterial({
-        color: 0xf97316,
-        emissive: 0xef4444,
-        emissiveIntensity: 3.0,
-      }));
-      magmaCore.rotation.x = Math.PI / 2;
-      magmaCore.position.set(0, 0.12, 0.19);
-      this.torsoVisuals.add(magmaCore);
+      const magatama = new THREE.Mesh(new THREE.TorusGeometry(0.035, 0.012, 8, 16), this.goldMat);
+      magatama.position.set(0, -0.26, 0.208);
+      this.torsoVisuals.add(magatama);
 
-      // Spiked Dragon Bone Pauldrons
-      const bonePauldrons = new THREE.MeshStandardMaterial({ color: 0x18181b, roughness: 0.4 });
+      // Sleek rogue shoulder wraps
       for (const side of [-1, 1]) {
-        const pauldron = new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.25, 4), bonePauldrons);
-        pauldron.position.set(side * 0.38, 0.42, 0);
-        pauldron.rotation.set(0, 0, side * -0.6);
+        const pauldron = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.08, 0.28), new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.4 }));
+        pauldron.position.set(side * 0.36, 0.36, 0);
         this.torsoVisuals.add(pauldron);
       }
+
+    } else if (variant === 'dragon_warrior') {
+      // --- DRAGON SCALE PLATE & MOLTEN MAGMA RUNE CORE ---
+      const plate = new THREE.Mesh(new THREE.BoxGeometry(0.60, 0.50, 0.38), new THREE.MeshStandardMaterial({ color: 0x090d16, roughness: 0.35, metalness: 0.5 }));
+      plate.position.set(0, 0.14, 0.005);
+      this.torsoVisuals.add(plate);
+
+      // Volcanic Magma Core Rune
+      const magmaCore = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.075, 0.02, 16), new THREE.MeshStandardMaterial({
+        color: 0xf97316,
+        emissive: 0xef4444,
+        emissiveIntensity: 3.5,
+      }));
+      magmaCore.rotation.x = Math.PI / 2;
+      magmaCore.position.set(0, 0.14, 0.196);
+      this.torsoVisuals.add(magmaCore);
+
+      const runeRing = new THREE.Mesh(new THREE.TorusGeometry(0.085, 0.010, 8, 20), this.goldMat);
+      runeRing.position.set(0, 0.14, 0.202);
+      this.torsoVisuals.add(runeRing);
+
+      // Spiked Obsidian Pauldrons with Glowing Molten Edges
+      const bonePauldrons = new THREE.MeshStandardMaterial({ color: 0x09090b, roughness: 0.3, metalness: 0.6 });
+      const lavaGlow = new THREE.MeshStandardMaterial({ color: 0xf97316, emissive: 0xef4444, emissiveIntensity: 2.0 });
+      for (const side of [-1, 1]) {
+        const pauldron = new THREE.Mesh(new THREE.ConeGeometry(0.13, 0.28, 4), bonePauldrons);
+        pauldron.position.set(side * 0.38, 0.40, 0);
+        pauldron.rotation.set(0, 0, side * -0.6);
+        this.torsoVisuals.add(pauldron);
+
+        const edgeSpike = new THREE.Mesh(new THREE.ConeGeometry(0.04, 0.14, 4), lavaGlow);
+        edgeSpike.position.set(side * 0.45, 0.48, 0);
+        edgeSpike.rotation.set(0, 0, side * -0.6);
+        this.torsoVisuals.add(edgeSpike);
+      }
+
+      // Scaled War Belt
+      const warBelt = new THREE.Mesh(new THREE.BoxGeometry(0.66, 0.14, 0.40), new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.4 }));
+      warBelt.position.y = -0.26;
+      this.torsoVisuals.add(warBelt);
 
     } else {
       // Hylian Champion Link Accessories (Collar, White Insignia, Gold Crest, Belt, Buckle, Sheikah Slate)
@@ -2183,14 +2392,21 @@ export class AvatarHero {
     // Ponytail secondary motion: reacts to body bounce & turning
     this.hairPonytail.rotation.z += this.turnRate * 0.04;
 
-    // Dynamic Tail Secondary Motion (Kitsune Fox-Tail / Dragon Tail)
+    // Dynamic Tail Secondary Motion (Kitsune Fox-Tail / Dragon Tail - Smooth & Natural)
     if (this.tail && this.tail.children.length > 0) {
       const isMovingState = action === 'WALK' || action === 'RUN' || action === 'SPRINT' || action === 'SWIMMING';
-      const tailSpeed = isMovingState ? 8.0 : 2.6;
-      const tailSway = Math.sin(t * tailSpeed);
-      this.tail.rotation.y = tailSway * (isMovingState ? 0.35 : 0.18) + this.turnRate * 0.12;
-      this.tail.rotation.x = isMovingState ? 0.22 + Math.abs(Math.sin(t * tailSpeed * 0.5)) * 0.14 : 0.08;
-      this.tail.rotation.z = Math.cos(t * tailSpeed) * 0.08;
+      // Slow, natural tail sway synchronized with locomotion cadence (no high-frequency vibration)
+      const isDragon = this.currentVariant === 'dragon_warrior';
+      const swayFactor = isDragon ? (isMovingState ? 0.55 : 0.25) : (isMovingState ? 0.75 : 0.35);
+      const tailSway = Math.sin(t * swayFactor);
+      const tailBob = Math.cos(t * swayFactor * 2);
+
+      // Graceful horizontal wave with turn inertia banking
+      this.tail.rotation.y = tailSway * (isMovingState ? 0.28 : 0.14) + this.turnRate * 0.16;
+      // Gentle vertical breathing / gait bob
+      this.tail.rotation.x = isMovingState ? (0.15 + tailBob * 0.06) : 0.06 + Math.sin(this.actionTime * 1.6) * 0.03;
+      // Subtle roll
+      this.tail.rotation.z = tailSway * -0.05;
     }
 
     // Vertical body spring (soft landings / squash on footfalls)

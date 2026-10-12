@@ -70,11 +70,21 @@ export const VirtualTouchControls: React.FC<TouchControlsProps> = ({
   const [isTouchDevice, setIsTouchDevice] = useState(false);
 
   useEffect(() => {
-    setIsTouchDevice(
+    const checkTouch = () => (
       'ontouchstart' in window ||
       navigator.maxTouchPoints > 0 ||
+      (navigator as any).msMaxTouchPoints > 0 ||
       window.matchMedia('(pointer: coarse)').matches
     );
+    setIsTouchDevice(checkTouch());
+
+    // Instant unlock on first touch for iPads, Android tablets and touch screens
+    const onFirstTouch = () => {
+      setIsTouchDevice(true);
+      window.removeEventListener('touchstart', onFirstTouch);
+    };
+    window.addEventListener('touchstart', onFirstTouch, { passive: true });
+    return () => window.removeEventListener('touchstart', onFirstTouch);
   }, []);
 
   useEffect(() => {

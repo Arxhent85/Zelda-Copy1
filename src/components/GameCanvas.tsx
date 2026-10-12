@@ -138,11 +138,21 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ settings, onEngineReady,
           }
         }
       } else {
-        // Play Mode: Pointer Lock or Attack
+        // Play Mode: Pointer Lock & Direct Combat Mouse Controls
         if (e.button === 0) {
-          // If not yet pointer locked, request pointer lock on first click
+          // Left Click = Primary Attack / Strike / Chop / Mine / Dig
           if (document.pointerLockElement !== canvasRef.current && (e.target as HTMLElement).tagName === 'CANVAS') {
             canvasRef.current?.requestPointerLock?.();
+          }
+          engine.performAttackOrHarvest();
+        } else if (e.button === 2) {
+          // Right Click = Heavy Spin Attack / Power Smash
+          engine.performHeavyAttack();
+        } else if (e.button === 1) {
+          // Middle Click = Target Lock-On Toggle
+          engine.cameraControls.isLockOnActive = !engine.cameraControls.isLockOnActive;
+          if (engine.onToastMessage) {
+            engine.onToastMessage(engine.cameraControls.isLockOnActive ? '🎯 Ziel fixiert' : '🎯 Ziel gelöst');
           }
         }
       }

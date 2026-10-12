@@ -267,8 +267,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <span className="font-bold">Mouse Drag / Right Screen Drag</span>
               </div>
               <div className="flex justify-between border-b border-white/5 pb-1">
-                <span className="text-slate-400">Sword Attack:</span>
-                <span className="font-bold">Left Click / 🗡️ Sword Button</span>
+                <span className="text-slate-400">Standard-Angriff / Schlagen:</span>
+                <span className="font-bold text-emerald-400">Linker Klick (Left Click) / 🗡️ Button</span>
+              </div>
+              <div className="flex justify-between border-b border-white/5 pb-1">
+                <span className="text-slate-400">Schwerer Wirbelschlag:</span>
+                <span className="font-bold text-amber-400">Rechter Klick (Right Click)</span>
               </div>
               <div className="flex justify-between border-b border-white/5 pb-1">
                 <span className="text-slate-400">Jump / Glide / Climb:</span>
