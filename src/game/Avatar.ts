@@ -573,16 +573,87 @@ export class AvatarHero {
     this.shield.rotation.y = Math.PI / 2;
     this.leftLowerArm.add(this.shield);
 
-    // Paraglider
+    // Paraglider (Zelda BotW Style Arched Canopy & Wooden Framework)
     this.paraglider = new THREE.Group();
-    const wingGeo = new THREE.PlaneGeometry(3.6, 1.5);
-    wingGeo.rotateX(Math.PI / 2);
-    const gliderMesh = new THREE.Mesh(wingGeo, clothWingMat);
-    const gliderFrame = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 3.8), leatherMat);
-    gliderFrame.rotation.z = Math.PI / 2;
-    this.paraglider.add(gliderMesh);
-    this.paraglider.add(gliderFrame);
-    this.paraglider.position.set(0, 1.8, 0);
+
+    // 1. Arched Aerodynamic Wing Canopy
+    const wingShape = new THREE.Shape();
+    wingShape.moveTo(-1.9, -0.35);
+    wingShape.quadraticCurveTo(-1.0, 0.55, 0, 0.65);
+    wingShape.quadraticCurveTo(1.0, 0.55, 1.9, -0.35);
+    wingShape.quadraticCurveTo(1.0, -0.65, 0, -0.72);
+    wingShape.quadraticCurveTo(-1.0, -0.65, -1.9, -0.35);
+
+    const wingGeo = new THREE.ShapeGeometry(wingShape, 24);
+    wingGeo.rotateX(-Math.PI / 2);
+
+    const wingPos = wingGeo.attributes.position;
+    for (let i = 0; i < wingPos.count; i++) {
+      const vx = wingPos.getX(i);
+      const vz = wingPos.getZ(i);
+      const droop = -Math.pow(Math.abs(vx) / 1.9, 2.0) * 0.28;
+      const billow = Math.cos((vz / 0.72) * (Math.PI * 0.5)) * 0.12;
+      wingPos.setY(i, droop + billow);
+    }
+    wingGeo.computeVertexNormals();
+
+    const canopyMat = new THREE.MeshStandardMaterial({
+      color: 0x1d4ed8, // Royal Champion Blue
+      roughness: 0.52,
+      metalness: 0.05,
+      side: THREE.DoubleSide,
+    });
+    const canopyMesh = new THREE.Mesh(wingGeo, canopyMat);
+    canopyMesh.castShadow = true;
+    canopyMesh.receiveShadow = true;
+    this.paraglider.add(canopyMesh);
+
+    // 2. Wooden Frame & Spars
+    const woodMat = new THREE.MeshStandardMaterial({ color: 0x78350f, roughness: 0.8 });
+    const trimGoldMat = new THREE.MeshStandardMaterial({ color: 0xf59e0b, roughness: 0.4, metalness: 0.6 });
+
+    // Curved front leading-edge spar
+    const sparGeo = new THREE.CylinderGeometry(0.035, 0.035, 3.85, 16);
+    sparGeo.rotateZ(Math.PI / 2);
+    const mainSpar = new THREE.Mesh(sparGeo, woodMat);
+    mainSpar.position.set(0, 0.02, 0.18);
+    mainSpar.castShadow = true;
+    this.paraglider.add(mainSpar);
+
+    // Center longitudinal keel spar
+    const keelGeo = new THREE.CylinderGeometry(0.028, 0.028, 1.4, 8);
+    keelGeo.rotateX(Math.PI / 2);
+    const keelSpar = new THREE.Mesh(keelGeo, woodMat);
+    keelSpar.position.set(0, 0.02, -0.05);
+    this.paraglider.add(keelSpar);
+
+    // Cross ribs (structural struts)
+    for (const rx of [-1.15, -0.48, 0.48, 1.15]) {
+      const rib = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 1.25, 6), woodMat);
+      rib.rotation.x = Math.PI / 2;
+      rib.position.set(rx, -0.02, -0.05);
+      this.paraglider.add(rib);
+    }
+
+    // 3. Vertical Suspension Hand Grips (positioned where Link's overhead hands grip!)
+    for (const hx of [-0.38, 0.38]) {
+      const dropStrut = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.52, 8), woodMat);
+      dropStrut.position.set(hx, -0.26, 0.05);
+      this.paraglider.add(dropStrut);
+
+      const grip = new THREE.Mesh(new THREE.CylinderGeometry(0.032, 0.032, 0.18, 10), darkLeatherMat);
+      grip.rotation.z = Math.PI / 2;
+      grip.position.set(hx, -0.52, 0.05);
+      this.paraglider.add(grip);
+
+      for (const end of [-1, 1]) {
+        const cap = new THREE.Mesh(new THREE.SphereGeometry(0.035, 8, 8), trimGoldMat);
+        cap.position.set(hx + end * 0.1, -0.52, 0.05);
+        this.paraglider.add(cap);
+      }
+    }
+
+    this.paraglider.position.set(0, 2.60, 0.08);
     this.paraglider.visible = false;
     this.mesh.add(this.paraglider);
 
@@ -596,6 +667,182 @@ export class AvatarHero {
 
     // Initialize default avatar archetype
     this.setAvatarVariant('hylian_hero');
+  }
+
+  /**
+   * Generates a high-definition unified anime face decal (Eyes, Brows, Nose hint, Smile, Blush)
+   * on an offscreen canvas for perfectly aligned, authentic BotW facial features without clipping or Z-fighting.
+   */
+  public createAnimeFaceDecalTexture(irisColorHex: number, isSlit: boolean = false, variant: AvatarVariant = 'hylian_hero'): THREE.CanvasTexture {
+    const canvas = document.createElement('canvas');
+    canvas.width = 512;
+    canvas.height = 512;
+    const ctx = canvas.getContext('2d')!;
+
+    ctx.clearRect(0, 0, 512, 512);
+
+    const drawEye = (centerX: number, centerY: number, isLeft: boolean) => {
+      const eyeW = 54;
+      const eyeH = 70;
+
+      // 1. Sclera (White eye background with clean almond shape)
+      ctx.save();
+      ctx.beginPath();
+      ctx.ellipse(centerX, centerY, eyeW, eyeH, 0, 0, Math.PI * 2);
+      ctx.fillStyle = '#ffffff';
+      ctx.fill();
+
+      // Soft upper shadow in sclera
+      const scleraGrad = ctx.createLinearGradient(centerX, centerY - eyeH, centerX, centerY);
+      scleraGrad.addColorStop(0, 'rgba(180, 195, 215, 0.42)');
+      scleraGrad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+      ctx.fillStyle = scleraGrad;
+      ctx.fill();
+
+      // 2. Iris (Large brilliant anime iris)
+      const irisW = eyeW * 0.78;
+      const irisH = eyeH * 0.92;
+      ctx.beginPath();
+      ctx.ellipse(centerX, centerY + 2, irisW, irisH, 0, 0, Math.PI * 2);
+      ctx.clip();
+
+      const hex = irisColorHex.toString(16).padStart(6, '0');
+      const irisGrad = ctx.createLinearGradient(centerX, centerY - irisH, centerX, centerY + irisH);
+      irisGrad.addColorStop(0, '#090d16');
+      irisGrad.addColorStop(0.35, '#' + hex);
+      irisGrad.addColorStop(0.75, '#38bdf8');
+      irisGrad.addColorStop(1, '#e0f2fe');
+      ctx.fillStyle = irisGrad;
+      ctx.fill();
+
+      // Inner luminous bottom glow
+      ctx.beginPath();
+      ctx.ellipse(centerX, centerY + 24, irisW * 0.65, irisH * 0.35, 0, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.38)';
+      ctx.fill();
+
+      // Pupil
+      ctx.beginPath();
+      if (isSlit) {
+        ctx.ellipse(centerX, centerY, 8, 38, 0, 0, Math.PI * 2);
+      } else {
+        ctx.ellipse(centerX, centerY - 2, 16, 22, 0, 0, Math.PI * 2);
+      }
+      ctx.fillStyle = '#090d16';
+      ctx.fill();
+
+      // Soft top shadow in iris
+      const irisShadow = ctx.createLinearGradient(centerX, centerY - irisH, centerX, centerY);
+      irisShadow.addColorStop(0, 'rgba(0, 0, 0, 0.6)');
+      irisShadow.addColorStop(1, 'rgba(0, 0, 0, 0)');
+      ctx.fillStyle = irisShadow;
+      ctx.fill();
+
+      ctx.restore();
+
+      // 3. Specular catchlights (sparkle reflections)
+      ctx.beginPath();
+      ctx.ellipse(centerX - 12, centerY - 18, 11, 14, -0.2, 0, Math.PI * 2);
+      ctx.fillStyle = '#ffffff';
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.ellipse(centerX + 16, centerY + 20, 6, 6, 0, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
+      ctx.fill();
+
+      // 4. Upper eyeliner with winged anime contour
+      ctx.beginPath();
+      const lx = isLeft ? centerX - 52 : centerX - 46;
+      const rx = isLeft ? centerX + 46 : centerX + 52;
+      ctx.moveTo(lx, centerY - 10);
+      ctx.bezierCurveTo(centerX - 24, centerY - 76, centerX + 24, centerY - 76, rx, centerY - 10);
+      ctx.bezierCurveTo(centerX + 20, centerY - 64, centerX - 20, centerY - 64, lx, centerY - 10);
+      ctx.fillStyle = '#1e293b';
+      ctx.fill();
+
+      // Outer lash wing
+      ctx.beginPath();
+      const wingOut = isLeft ? centerX - 54 : centerX + 54;
+      const wingTip = isLeft ? centerX - 64 : centerX + 64;
+      ctx.moveTo(wingOut, centerY - 16);
+      ctx.lineTo(wingTip, centerY - 28);
+      ctx.lineTo(isLeft ? centerX - 44 : centerX + 44, centerY - 6);
+      ctx.closePath();
+      ctx.fillStyle = '#1e293b';
+      ctx.fill();
+
+      // Delicate lower lash accent
+      ctx.beginPath();
+      ctx.moveTo(centerX - 24, centerY + 62);
+      ctx.quadraticCurveTo(centerX, centerY + 68, centerX + 24, centerY + 62);
+      ctx.strokeStyle = 'rgba(30, 41, 59, 0.45)';
+      ctx.lineWidth = 3;
+      ctx.stroke();
+    };
+
+    // Draw Left and Right Eyes with balanced anime interpupillary distance
+    drawEye(184, 235, true);
+    drawEye(328, 235, false);
+
+    // 5. Eyebrows (Heroic arched brows)
+    const browColor = variant === 'princess_zelda' ? '#b45309' : variant === 'kitsune_beast' ? '#9a3412' : variant === 'dragon_warrior' ? '#0f172a' : '#855c26';
+    ctx.strokeStyle = browColor;
+    ctx.lineWidth = 6;
+    ctx.lineCap = 'round';
+
+    // Left eyebrow
+    ctx.beginPath();
+    ctx.moveTo(134, 168);
+    ctx.quadraticCurveTo(185, 142, 228, 166);
+    ctx.stroke();
+
+    // Right eyebrow
+    ctx.beginPath();
+    ctx.moveTo(378, 168);
+    ctx.quadraticCurveTo(327, 142, 284, 166);
+    ctx.stroke();
+
+    // 6. Cute stylized anime nose bridge hint
+    ctx.fillStyle = 'rgba(180, 105, 80, 0.7)';
+    ctx.beginPath();
+    ctx.ellipse(256, 286, 3, 5, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 7. Confident anime smile line
+    const mouthColor = variant === 'princess_zelda' ? '#e11d48' : '#be123c';
+    ctx.strokeStyle = mouthColor;
+    ctx.lineWidth = 4;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(234, 334);
+    ctx.quadraticCurveTo(256, 348, 278, 334);
+    ctx.stroke();
+
+    // Soft lower lip highlight
+    ctx.fillStyle = 'rgba(251, 113, 133, 0.45)';
+    ctx.beginPath();
+    ctx.ellipse(256, 347, 8, 3, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 8. Peach blush on cheeks
+    const blushColor = 'rgba(251, 146, 60, 0.22)';
+    const drawBlush = (bx: number) => {
+      const bGrad = ctx.createRadialGradient(bx, 290, 0, bx, 290, 36);
+      bGrad.addColorStop(0, blushColor);
+      bGrad.addColorStop(1, 'rgba(251, 146, 60, 0)');
+      ctx.fillStyle = bGrad;
+      ctx.beginPath();
+      ctx.arc(bx, 290, 36, 0, Math.PI * 2);
+      ctx.fill();
+    };
+    drawBlush(150);
+    drawBlush(362);
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.needsUpdate = true;
+    return texture;
   }
 
   /**
@@ -801,7 +1048,7 @@ export class AvatarHero {
     cranium.receiveShadow = true;
     this.headVisuals.add(cranium);
 
-    // Smooth tapering anime jawline (blends seamlessly from ears down to chin)
+    // Smooth tapering anime jawline (blends seamlessly down to chin)
     const jawGeo = new THREE.CylinderGeometry(0.175, 0.092, 0.16, 28);
     jawGeo.scale(0.92, 1.0, 0.88);
     const jaw = new THREE.Mesh(jawGeo, this.skinMat);
@@ -810,30 +1057,7 @@ export class AvatarHero {
     jaw.receiveShadow = true;
     this.headVisuals.add(jaw);
 
-    // Gentle rounded anime chin
-    const chinGeo = new THREE.SphereGeometry(0.060, 20, 16);
-    chinGeo.scale(0.85, 0.8, 1.02);
-    const chin = new THREE.Mesh(chinGeo, this.skinMat);
-    chin.position.set(0, -0.162, 0.052);
-    chin.castShadow = true;
-    chin.receiveShadow = true;
-    this.headVisuals.add(chin);
-
-    // Delicate anime nose tip (subtle and stylish, not a protruding pipe)
-    const nose = new THREE.Mesh(new THREE.ConeGeometry(0.008, 0.030, 4), this.skinMat);
-    nose.position.set(0, -0.014, 0.182);
-    nose.rotation.x = 0.22;
-    nose.castShadow = true;
-    this.headVisuals.add(nose);
-
-    // Soft, friendly anime smile line
-    const mouthGeo = new THREE.TorusGeometry(0.022, 0.003, 6, 12, Math.PI * 0.55);
-    const mouth = new THREE.Mesh(mouthGeo, this.lipMat);
-    mouth.position.set(0, -0.085, 0.168);
-    mouth.rotation.set(-0.1, 0, Math.PI + 0.28);
-    this.headVisuals.add(mouth);
-
-    // 3. Stylized High-Definition Anime Eyes
+    // 3. Unified High-Definition Anime Face Decal (Eyes, Eyebrows, Nose bridge, Smile, Blush)
     let eyeIrisColor = 0x0284c7; // Brilliant Sapphire for Link
     let isSlitPupil = false;
     if (variant === 'princess_zelda') {
@@ -846,36 +1070,31 @@ export class AvatarHero {
       isSlitPupil = true;
     }
 
-    const leftEyeTex = this.createAnimeEyeTexture(eyeIrisColor, isSlitPupil);
-    const rightEyeTex = this.createAnimeEyeTexture(eyeIrisColor, isSlitPupil);
-    rightEyeTex.repeat.x = -1;
-    rightEyeTex.offset.x = 1;
+    const faceTex = this.createAnimeFaceDecalTexture(eyeIrisColor, isSlitPupil, variant);
+    const faceMat = new THREE.MeshStandardMaterial({
+      map: faceTex,
+      transparent: true,
+      roughness: 0.32,
+      metalness: 0.0,
+      polygonOffset: true,
+      polygonOffsetFactor: -2,
+      polygonOffsetUnits: -2,
+      depthWrite: false,
+    });
 
-    const eyeGeo = new THREE.PlaneGeometry(0.082, 0.092);
-    for (const isLeft of [true, false]) {
-      const side = isLeft ? -1 : 1;
-      const eyeMat = new THREE.MeshStandardMaterial({
-        map: isLeft ? leftEyeTex : rightEyeTex,
-        transparent: true,
-        roughness: 0.25,
-        metalness: 0.02,
-        polygonOffset: true,
-        polygonOffsetFactor: -1,
-        polygonOffsetUnits: -1,
-        depthWrite: false,
-      });
-      const eyeMesh = new THREE.Mesh(eyeGeo, eyeMat);
-      eyeMesh.position.set(side * 0.074, 0.016, 0.176);
-      eyeMesh.rotation.set(-0.05, side * 0.25, 0);
-      this.headVisuals.add(eyeMesh);
-
-      // Heroic Eyebrows (Positioned naturally above eyes on the brow ridge)
-      const browGeo = new THREE.CylinderGeometry(0.0038, 0.0068, 0.074, 8);
-      const brow = new THREE.Mesh(browGeo, this.eyebrowMat);
-      brow.position.set(side * 0.074, 0.070, 0.173);
-      brow.rotation.set(-0.07, side * 0.24, isLeft ? 1.48 : -1.48);
-      this.headVisuals.add(brow);
+    // Curved face mesh hugging the front curvature of the cranium
+    const faceGeo = new THREE.PlaneGeometry(0.28, 0.28, 8, 4);
+    const facePos = faceGeo.attributes.position;
+    for (let i = 0; i < facePos.count; i++) {
+      const vx = facePos.getX(i);
+      facePos.setZ(i, -(vx * vx) * 0.7);
     }
+    faceGeo.computeVertexNormals();
+
+    const faceMesh = new THREE.Mesh(faceGeo, faceMat);
+    faceMesh.position.set(0, -0.012, 0.183);
+    faceMesh.rotation.x = -0.04;
+    this.headVisuals.add(faceMesh);
 
     // Cheek Accents
     if (variant === 'kitsune_beast') {
@@ -888,15 +1107,6 @@ export class AvatarHero {
           this.headVisuals.add(whisker);
         }
       }
-    } else if (variant === 'princess_zelda') {
-      const blushGeo = new THREE.SphereGeometry(0.038, 12, 8);
-      blushGeo.scale(1.2, 0.6, 0.2);
-      const leftBlush = new THREE.Mesh(blushGeo, this.blushMat);
-      leftBlush.position.set(-0.1, -0.05, 0.16);
-      this.headVisuals.add(leftBlush);
-      const rightBlush = leftBlush.clone();
-      rightBlush.position.x = 0.1;
-      this.headVisuals.add(rightBlush);
     }
 
     if (variant === 'princess_zelda') {
@@ -1062,7 +1272,7 @@ export class AvatarHero {
       const crownGeo = new THREE.SphereGeometry(0.204, 32, 24);
       crownGeo.scale(1.03, 1.03, 1.06);
       const crownMesh = new THREE.Mesh(crownGeo, this.hairMat);
-      crownMesh.position.set(0, 0.046, -0.022);
+      crownMesh.position.set(0, 0.052, -0.056);
       crownMesh.castShadow = true;
       this.headVisuals.add(crownMesh);
 
@@ -1075,13 +1285,13 @@ export class AvatarHero {
       napeMesh.castShadow = true;
       this.headVisuals.add(napeMesh);
 
-      // 2. Feathered Layered Anime Bangs (Breath of the Wild Center-Parted Fringe)
+      // 2. Feathered Layered Anime Bangs (Breath of the Wild Center-Parted Fringe - hanging downward over forehead)
       // Left forehead swept locks (cascading over temple and outer brow)
       const leftBangAngles = [
-        { x: -0.038, y: 0.108, z: 0.176, rx: 0.28, ry: 0.16, rz: 0.38, w: 0.042, h: 0.22, mat: this.hairMat },
-        { x: -0.082, y: 0.088, z: 0.170, rx: 0.30, ry: 0.24, rz: 0.52, w: 0.044, h: 0.24, mat: this.hairHighlightMat },
-        { x: -0.124, y: 0.062, z: 0.155, rx: 0.26, ry: 0.32, rz: 0.65, w: 0.040, h: 0.26, mat: this.hairMat },
-        { x: -0.152, y: 0.035, z: 0.130, rx: 0.20, ry: 0.38, rz: 0.78, w: 0.036, h: 0.24, mat: this.darkHairMat },
+        { x: -0.032, y: 0.130, z: 0.165, rx: 2.82, ry: -0.12, rz: 0.26, w: 0.038, h: 0.18, mat: this.hairMat },
+        { x: -0.068, y: 0.122, z: 0.158, rx: 2.84, ry: -0.20, rz: 0.38, w: 0.040, h: 0.20, mat: this.hairHighlightMat },
+        { x: -0.108, y: 0.110, z: 0.148, rx: 2.86, ry: -0.28, rz: 0.50, w: 0.038, h: 0.22, mat: this.hairMat },
+        { x: -0.142, y: 0.092, z: 0.130, rx: 2.88, ry: -0.34, rz: 0.62, w: 0.034, h: 0.22, mat: this.darkHairMat },
       ];
       for (const b of leftBangAngles) {
         const bang = new THREE.Mesh(new THREE.ConeGeometry(b.w, b.h, 10), b.mat);
@@ -1094,10 +1304,10 @@ export class AvatarHero {
 
       // Right forehead swept locks
       const rightBangAngles = [
-        { x: 0.038, y: 0.108, z: 0.176, rx: 0.28, ry: -0.16, rz: -0.38, w: 0.042, h: 0.22, mat: this.hairMat },
-        { x: 0.082, y: 0.088, z: 0.170, rx: 0.30, ry: -0.24, rz: -0.52, w: 0.044, h: 0.24, mat: this.hairHighlightMat },
-        { x: 0.124, y: 0.062, z: 0.155, rx: 0.26, ry: -0.32, rz: -0.65, w: 0.040, h: 0.26, mat: this.hairMat },
-        { x: 0.152, y: 0.035, z: 0.130, rx: 0.20, ry: -0.38, rz: -0.78, w: 0.036, h: 0.24, mat: this.darkHairMat },
+        { x: 0.032, y: 0.130, z: 0.165, rx: 2.82, ry: 0.12, rz: -0.26, w: 0.038, h: 0.18, mat: this.hairMat },
+        { x: 0.068, y: 0.122, z: 0.158, rx: 2.84, ry: 0.20, rz: -0.38, w: 0.040, h: 0.20, mat: this.hairHighlightMat },
+        { x: 0.108, y: 0.110, z: 0.148, rx: 2.86, ry: 0.28, rz: -0.50, w: 0.038, h: 0.22, mat: this.hairMat },
+        { x: 0.142, y: 0.092, z: 0.130, rx: 2.88, ry: 0.34, rz: -0.62, w: 0.034, h: 0.22, mat: this.darkHairMat },
       ];
       for (const b of rightBangAngles) {
         const bang = new THREE.Mesh(new THREE.ConeGeometry(b.w, b.h, 10), b.mat);
@@ -1109,10 +1319,10 @@ export class AvatarHero {
       }
 
       // Center part accent flick (organic feathering above bridge of nose)
-      const centerFlick = new THREE.Mesh(new THREE.ConeGeometry(0.026, 0.15, 8), this.hairHighlightMat);
+      const centerFlick = new THREE.Mesh(new THREE.ConeGeometry(0.024, 0.14, 8), this.hairHighlightMat);
       centerFlick.scale.set(1.0, 1.0, 0.4);
-      centerFlick.position.set(-0.008, 0.125, 0.182);
-      centerFlick.rotation.set(0.35, 0.05, 0.12);
+      centerFlick.position.set(-0.005, 0.135, 0.170);
+      centerFlick.rotation.set(2.80, 0.05, 0.08);
       this.headVisuals.add(centerFlick);
 
       // 3. Iconic Face-Framing Side Tresses with Champion Blue Wraps
@@ -1245,27 +1455,35 @@ export class AvatarHero {
       }
 
     } else {
-      // Hylian Champion Link Accessories (Collar, Stripes, Harness, Sheikah Slate)
+      // Hylian Champion Link Accessories (Collar, White Insignia, Gold Crest, Belt, Buckle, Sheikah Slate)
       const collar = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.1, 0.34), this.tunicTrimMat);
       collar.position.set(0, 0.44, 0);
       this.torsoVisuals.add(collar);
 
-      const chestStripe = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.55, 0.02), this.tunicTrimMat);
-      chestStripe.position.set(0, 0.08, 0.185);
+      // Champion's Tunic White Insignia (Clean layered depth - ZERO Z-FIGHTING)
+      const chestStripe = new THREE.Mesh(new THREE.BoxGeometry(0.10, 0.50, 0.02), this.tunicTrimMat);
+      chestStripe.position.set(0, 0.09, 0.188);
       this.torsoVisuals.add(chestStripe);
 
-      const chestCross = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.07, 0.02), this.tunicTrimMat);
-      chestCross.position.set(0, 0.18, 0.185);
+      const chestCross = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.07, 0.02), this.tunicTrimMat);
+      chestCross.position.set(0, 0.18, 0.188);
       this.torsoVisuals.add(chestCross);
 
-      const harness = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.95, 0.39), this.darkLeatherMat);
-      harness.rotation.z = -0.36;
-      harness.position.set(0, 0.02, 0);
-      this.torsoVisuals.add(harness);
+      // Golden Champion Diamond Emblem at center of cross
+      const crestGeo = new THREE.ConeGeometry(0.032, 0.048, 4);
+      const crestMesh = new THREE.Mesh(crestGeo, this.goldMat);
+      crestMesh.rotation.set(Math.PI / 2, 0, Math.PI / 4);
+      crestMesh.position.set(0, 0.18, 0.198);
+      this.torsoVisuals.add(crestMesh);
 
+      // Leather Waist Belt with Golden Buckle
       const mainBelt = new THREE.Mesh(new THREE.BoxGeometry(0.66, 0.12, 0.39), this.darkLeatherMat);
       mainBelt.position.y = -0.28;
       this.torsoVisuals.add(mainBelt);
+
+      const beltBuckle = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.09, 0.03), this.goldMat);
+      beltBuckle.position.set(0, -0.28, 0.202);
+      this.torsoVisuals.add(beltBuckle);
 
       // Sheikah Slate
       const slateGroup = new THREE.Group();
@@ -1334,6 +1552,9 @@ export class AvatarHero {
 
     this.paraglider.visible = false;
     this.bow.visible = action === 'BOW_AIM';
+    const weaponsEquipped = action !== 'BOW_AIM' && action !== 'GLIDE' && action !== 'CLIMB';
+    this.sword.visible = weaponsEquipped;
+    this.shield.visible = weaponsEquipped;
 
     // -------------------------------------------------------------
     // Verlet Cloth Physics for Cloak / Cape (From Snowflow Engine)
@@ -1343,9 +1564,10 @@ export class AvatarHero {
     const subDt = Math.min(delta, 0.033) / subSteps;
     const damping = 0.955;
 
-    // Wind & Aerodynamic forces
-    const windLift = isMoving ? 1.5 + speedRatio * 5.5 : 0.4;
-    const windBackward = isMoving ? -3.5 - speedRatio * 12.0 : -0.2;
+    // Wind & Aerodynamic forces (high-speed backward stream when gliding)
+    const isGliding = action === 'GLIDE';
+    const windLift = isGliding ? 5.5 : (isMoving ? 1.5 + speedRatio * 5.5 : 0.4);
+    const windBackward = isGliding ? -20.0 : (isMoving ? -3.5 - speedRatio * 12.0 : -0.2);
     const gravityVec = new THREE.Vector3(0, -9.81, 0);
 
     const tmpV = new THREE.Vector3();
@@ -1532,29 +1754,36 @@ export class AvatarHero {
 
       case 'GLIDE': {
         this.paraglider.visible = true;
-        const flap = Math.sin(at * 2.2);
-        const bank = THREE.MathUtils.clamp(-this.turnRate * 0.12, -0.5, 0.5);
+        const thermalCycle = Math.sin(at * 2.4);
+        const gust = Math.sin(at * 5.8) * 0.04;
+        const bank = THREE.MathUtils.clamp(-this.turnRate * 0.32, -0.75, 0.75);
 
-        // Overhead grip; arms pull down on the inner side of the turn
-        this.leftUpperArm.rotation.set(Math.PI - 0.25 + bank * 0.35 + flap * 0.04, 0, -0.28);
-        this.leftLowerArm.rotation.set(-0.45 - bank * 0.2, 0, 0);
-        this.rightUpperArm.rotation.set(Math.PI - 0.25 - bank * 0.35 + flap * 0.04, 0, 0.28);
-        this.rightLowerArm.rotation.set(-0.45 + bank * 0.2, 0, 0);
+        // Athletic overhead grip on glider bars; pulls down on inner turn side
+        this.leftUpperArm.rotation.set(Math.PI - 0.28 + bank * 0.38 + thermalCycle * 0.04, 0.12, -0.26 + bank * 0.1);
+        this.leftLowerArm.rotation.set(-0.38 - bank * 0.22, 0, 0);
+        this.rightUpperArm.rotation.set(Math.PI - 0.28 - bank * 0.38 + thermalCycle * 0.04, -0.12, 0.26 + bank * 0.1);
+        this.rightLowerArm.rotation.set(-0.38 + bank * 0.22, 0, 0);
 
-        // Legs trail behind & gently pedal in the airstream
-        const kick = Math.sin(at * 3.4);
-        this.leftUpperLeg.rotation.set(-0.35 + kick * 0.12, 0, -0.06);
-        this.leftLowerLeg.rotation.x = 0.55 - kick * 0.15;
-        this.rightUpperLeg.rotation.set(-0.3 - kick * 0.12, 0, 0.06);
-        this.rightLowerLeg.rotation.x = 0.5 + kick * 0.15;
+        // Active aerodynamic legs trailing in slipstream with gentle wind flutter
+        const legFlutter = Math.sin(at * 3.8);
+        this.leftUpperLeg.rotation.set(-0.42 + legFlutter * 0.14, -bank * 0.2, -0.12 + bank * 0.15);
+        this.leftLowerLeg.rotation.x = 0.65 - legFlutter * 0.16;
+        this.rightUpperLeg.rotation.set(-0.38 - legFlutter * 0.14, -bank * 0.2, 0.12 + bank * 0.15);
+        this.rightLowerLeg.rotation.x = 0.58 + legFlutter * 0.16;
 
-        // Superman-style body: lean forward, bank with turns, float bob
-        this.torso.rotation.set(0.55 + flap * 0.04, 0, bank);
-        this.torso.position.y = 1.35 + Math.sin(at * 1.6) * 0.05;
-        this.head.rotation.set(-0.45, -bank * 0.3, -bank * 0.4);
-        this.hairPonytail.rotation.set(1.25 + Math.sin(at * 14) * 0.08, 0, Math.sin(at * 9) * 0.12);
+        // Heroic aerial posture: pitch forward into wind, roll into banks, float with thermals
+        this.torso.rotation.set(0.48 + thermalCycle * 0.06 + Math.abs(bank) * 0.12, -bank * 0.25, bank);
+        this.torso.position.y = 1.35 + thermalCycle * 0.07 + gust;
 
-        this.paraglider.rotation.set(Math.sin(at * 1.3) * 0.04, 0, bank * 0.8 + Math.sin(at * 0.7) * 0.06);
+        // Head looks forward to horizon & turns slightly into bank
+        this.head.rotation.set(-0.36 - thermalCycle * 0.04, bank * 0.32, -bank * 0.25);
+
+        // Ponytail streams back in high-speed wind
+        this.hairPonytail.rotation.set(1.40 + Math.sin(at * 14.0) * 0.15, bank * 0.2, Math.sin(at * 9.0) * 0.16);
+
+        // Paraglider responsive aerodynamic roll and gentle pitch oscillation
+        this.paraglider.position.set(0, 2.60 + thermalCycle * 0.03, 0.08);
+        this.paraglider.rotation.set(Math.sin(at * 1.6) * 0.04 + Math.abs(bank) * 0.08, -bank * 0.15, bank * 0.88 + Math.sin(at * 0.9) * 0.05);
         break;
       }
 
