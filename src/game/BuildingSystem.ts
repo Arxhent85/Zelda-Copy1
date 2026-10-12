@@ -1294,6 +1294,152 @@ export class BuildingSystem {
         }
         break;
       }
+
+      case 'track_pylon': {
+        // 🔶 Traffic Cone / Rennstrecken-Pylone
+        const baseMat = isHologram ? this.hologramMaterial : new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.8 });
+        const coneMat = isHologram ? this.hologramMaterial : new THREE.MeshStandardMaterial({ color: 0xf97316, roughness: 0.4 });
+        const stripeMat = isHologram ? this.hologramMaterial : new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.3 });
+
+        // Heavy Rubber Base
+        const base = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.08, 0.55), baseMat);
+        base.position.y = 0.04;
+        base.castShadow = true;
+        group.add(base);
+
+        // Orange Cone Body
+        const cone = new THREE.Mesh(new THREE.ConeGeometry(0.22, 0.82, 16), coneMat);
+        cone.position.y = 0.48;
+        cone.castShadow = true;
+        group.add(cone);
+
+        // White Reflective Band Ring
+        const ring = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.15, 0.18, 16), stripeMat);
+        ring.position.y = 0.44;
+        group.add(ring);
+        break;
+      }
+
+      case 'track_tires': {
+        // 🛞 Tire Stack / Rennstrecken-Reifenstapel
+        const tireMat = isHologram ? this.hologramMaterial : new THREE.MeshStandardMaterial({ color: 0x18181b, roughness: 0.85 });
+        const tireRedMat = isHologram ? this.hologramMaterial : new THREE.MeshStandardMaterial({ color: 0xdc2626, roughness: 0.7 });
+        const tireWhiteMat = isHologram ? this.hologramMaterial : new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.6 });
+
+        // 3 Stacked Tires with alternating racing colors
+        const mats = [tireMat, tireRedMat, tireWhiteMat];
+        for (let i = 0; i < 3; i++) {
+          const t = new THREE.Mesh(new THREE.TorusGeometry(0.38, 0.16, 10, 20), mats[i % mats.length]);
+          t.rotation.x = Math.PI / 2;
+          t.position.y = 0.16 + i * 0.28;
+          t.castShadow = true;
+          group.add(t);
+        }
+        break;
+      }
+
+      case 'track_boost_pad': {
+        // ⚡ Speed Boost Pad / Turbo-Beschleuniger
+        const padMat = isHologram
+          ? this.hologramMaterial
+          : new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.4, metalness: 0.6 });
+        const glowMat = isHologram
+          ? this.hologramMaterial
+          : new THREE.MeshStandardMaterial({
+              color: 0x00f0ff,
+              emissive: 0x00d4ff,
+              emissiveIntensity: 3.5,
+              roughness: 0.2,
+            });
+
+        // Flush Ground Plate
+        const plate = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.05, 3.2), padMat);
+        plate.position.y = 0.025;
+        plate.receiveShadow = true;
+        group.add(plate);
+
+        // 3 Glowing Forward Chevrons (>>>)
+        for (let c = -1; c <= 1; c++) {
+          const chevron = new THREE.Mesh(new THREE.ConeGeometry(0.45, 0.8, 3), glowMat);
+          chevron.rotation.x = Math.PI / 2;
+          chevron.rotation.z = Math.PI;
+          chevron.position.set(0, 0.055, c * 0.85);
+          group.add(chevron);
+        }
+
+        // Side Cyan Glow Strips
+        const stripL = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.06, 3.0), glowMat);
+        stripL.position.set(-1.1, 0.04, 0);
+        group.add(stripL);
+
+        const stripR = stripL.clone();
+        stripR.position.x = 1.1;
+        group.add(stripR);
+        break;
+      }
+
+      case 'track_barrier': {
+        // 🚧 Concrete / Steel Crash Barrier / Beton-Barriere mit Warnstreifen
+        const concreteMat = isHologram
+          ? this.hologramMaterial
+          : new THREE.MeshStandardMaterial({ color: 0x64748b, roughness: 0.9 });
+        const hazardMat = isHologram
+          ? this.hologramMaterial
+          : new THREE.MeshStandardMaterial({ color: 0xeab308, roughness: 0.4 });
+        const hazardBlackMat = isHologram
+          ? this.hologramMaterial
+          : new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.5 });
+
+        // Heavy Concrete Jersey Barrier Profile
+        const barrier = new THREE.Mesh(new THREE.BoxGeometry(3.0, 1.15, 0.65), concreteMat);
+        barrier.position.y = 0.575;
+        barrier.castShadow = true;
+        group.add(barrier);
+
+        // Warning Stripes
+        for (let s = -1.2; s <= 1.2; s += 0.5) {
+          const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.35, 0.68), hazardMat);
+          stripe.position.set(s, 0.7, 0);
+          stripe.rotation.z = 0.35;
+          group.add(stripe);
+
+          const stripeB = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.35, 0.68), hazardBlackMat);
+          stripeB.position.set(s + 0.25, 0.7, 0);
+          stripeB.rotation.z = 0.35;
+          group.add(stripeB);
+        }
+        break;
+      }
+
+      case 'track_coin': {
+        // 💎 Collectible Gold Rupee Coin / Renn-Trophäe
+        const coinMat = isHologram
+          ? this.hologramMaterial
+          : new THREE.MeshStandardMaterial({
+              color: 0xf59e0b,
+              emissive: 0xd97706,
+              emissiveIntensity: 1.2,
+              metalness: 0.95,
+              roughness: 0.15,
+            });
+
+        // Floating Diamond / Octahedral Rupee
+        const coin = new THREE.Mesh(new THREE.OctahedronGeometry(0.5, 0), coinMat);
+        coin.scale.set(0.65, 1.2, 0.45);
+        coin.position.y = 1.35;
+        coin.castShadow = true;
+        group.add(coin);
+
+        // Shimmering Orbit Ring
+        const ringMat = isHologram
+          ? this.hologramMaterial
+          : new THREE.MeshBasicMaterial({ color: 0xfde047, wireframe: true });
+        const ring = new THREE.Mesh(new THREE.TorusGeometry(0.65, 0.04, 8, 16), ringMat);
+        ring.position.y = 1.35;
+        ring.rotation.x = Math.PI / 3;
+        group.add(ring);
+        break;
+      }
     }
 
     return group;
@@ -1739,7 +1885,15 @@ export class BuildingSystem {
     let radius = 1.5;
     let height = 2.8;
 
+    if (struct.type === 'track_boost_pad' || struct.type === 'track_coin') {
+      // Non-blocking trigger props (boost pad & collectible coin)
+      return;
+    }
+
     if (struct.type === 'pillar_wood') { radius = 0.5; height = 3.2; }
+    else if (struct.type === 'track_pylon') { radius = 0.32; height = 0.85; }
+    else if (struct.type === 'track_tires') { radius = 0.65; height = 0.95; }
+    else if (struct.type === 'track_barrier') { radius = 0.85; height = 1.25; }
     else if (struct.type === 'campfire' || struct.type === 'workbench') { radius = 0.9; height = 1.2; }
     else if (struct.type === 'lantern_post') { radius = 0.45; height = 3.4; }
     else if (struct.type === 'target_dummy') { radius = 0.65; height = 2.2; }

@@ -238,6 +238,7 @@ export class GameEngine {
     bestLapTime: null as number | null,
     lastGatePassTime: 0,
   };
+  private lastBoostTime: number = 0;
 
   // Callbacks to update React UI HUD
   public onStateUpdate?: () => void;
@@ -463,6 +464,8 @@ export class GameEngine {
                 this.physics.velocity.set(0, 0, 0);
                 this.physics.actionState = 'RIDE';
               }
+            } else {
+              // On-foot locomotion & physics simulation
               const onRoad = this.buildingSystem.isPlayerOnCatanRoad(this.physics.position);
               this.physics.update(
                 delta,
@@ -676,6 +679,7 @@ export class GameEngine {
     if (this.editorManager.isEditorActive) return;
 
     for (const struct of this.buildingSystem.structures) {
+      // 1. Start & Finish Gates Check
       if (struct.data.type === 'track_start_gate' || struct.data.type === 'track_finish_gate') {
         const dist = Math.hypot(
           struct.data.position.x - this.physics.position.x,
@@ -714,6 +718,41 @@ export class GameEngine {
                 );
               }
             }
+          }
+        }
+      }
+
+      // 2. Turbo Boost Pad Trigger
+      if (struct.data.type === 'track_boost_pad') {
+        const dist = Math.hypot(
+          struct.data.position.x - this.physics.position.x,
+          struct.data.position.z - this.physics.position.z
+        );
+        if (dist < 2.2 && now - this.lastBoostTime > 1.2) {
+          this.lastBoostTime = now;
+          // Forward burst in hero facing direction
+          const yaw = this.avatar.mesh.rotation.y;
+          this.physics.velocity.x += Math.sin(yaw) * 16.0;
+          this.physics.velocity.z += Math.cos(yaw) * 16.0;
+          audioEngine.playMenuSelect();
+          if (this.onToastMessage) {
+            this.onToastMessage('⚡ TURBO-BOOST AKTIVIERT! +100% TEMPO!');
+          }
+        }
+      }
+
+      // 3. Collectible Coin Trigger
+      if (struct.data.type === 'track_coin' && struct.mesh.visible) {
+        struct.mesh.rotation.y += 0.04;
+        const dist = Math.hypot(
+          struct.data.position.x - this.physics.position.x,
+          struct.data.position.z - this.physics.position.z
+        );
+        if (dist < 1.8) {
+          struct.mesh.visible = false;
+          audioEngine.playShrineFanfare();
+          if (this.onToastMessage) {
+            this.onToastMessage('💎 RENN-MÜNZE EINGESAMMELT! +20 Rubine!');
           }
         }
       }

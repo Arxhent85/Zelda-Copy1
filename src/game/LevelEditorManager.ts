@@ -52,7 +52,7 @@ export class LevelEditorManager {
   public roadPlannerMaterial: RoadMaterialType = 'asphalt';
   public roadPlannerWall: RoadWallType = 'racing_wall';
   public roadPlannerIsLoop: boolean = false;
-  public roadPlannerWidth: number = 5.0;
+  public roadPlannerWidth: number = 7.5;
   public roadPlannerHasStartGate: boolean = true;
   public lastBuiltRoadSegmentIds: string[] = [];
   public roadPreviewGroup: THREE.Group = new THREE.Group();
@@ -458,6 +458,11 @@ export class LevelEditorManager {
     this.roadPlannerWall = wall;
   }
 
+  public setRoadWidth(width: number) {
+    this.roadPlannerWidth = Math.max(2.5, Math.min(20.0, width));
+    this.updateRoadPreview();
+  }
+
   public clearRoadPreview() {
     while (this.roadPreviewGroup.children.length > 0) {
       const obj = this.roadPreviewGroup.children[0];
@@ -599,7 +604,113 @@ export class LevelEditorManager {
   }
 
   /**
-   * Instantiates all road segments, gates, and obstacles along the planned curve
+   * Procedural canvas texture generator for seamless continuous roads
+   */
+  private createRoadTexture(matType: RoadMaterialType): THREE.CanvasTexture {
+    const canvas = document.createElement('canvas');
+    canvas.width = 512;
+    canvas.height = 512;
+    const ctx = canvas.getContext('2d')!;
+
+    if (matType === 'asphalt') {
+      // Dark tarmac
+      ctx.fillStyle = '#1c2128';
+      ctx.fillRect(0, 0, 512, 512);
+      // Realistic asphalt grain
+      for (let i = 0; i < 2500; i++) {
+        ctx.fillStyle = Math.random() > 0.5 ? '#262f3a' : '#12161b';
+        ctx.fillRect(Math.random() * 512, Math.random() * 512, 2, 2);
+      }
+      // Bright white edge boundary lines
+      ctx.fillStyle = '#f8fafc';
+      ctx.fillRect(24, 0, 16, 512);
+      ctx.fillRect(512 - 40, 0, 16, 512);
+      // Golden yellow dashed centerline
+      ctx.strokeStyle = '#facc15';
+      ctx.lineWidth = 14;
+      ctx.setLineDash([48, 48]);
+      ctx.beginPath();
+      ctx.moveTo(256, 0);
+      ctx.lineTo(256, 512);
+      ctx.stroke();
+
+    } else if (matType === 'cobblestone') {
+      // Rustic Hyrule Cobblestone
+      ctx.fillStyle = '#374151';
+      ctx.fillRect(0, 0, 512, 512);
+      const cols = 8;
+      const rows = 16;
+      const cw = 512 / cols;
+      const rh = 512 / rows;
+      for (let r = 0; r < rows; r++) {
+        const offset = (r % 2) * (cw / 2);
+        for (let c = -1; c <= cols; c++) {
+          const shade = Math.floor(100 + Math.random() * 50);
+          ctx.fillStyle = `rgb(${shade}, ${shade + 4}, ${shade + 8})`;
+          ctx.fillRect(c * cw + offset + 3, r * rh + 3, cw - 6, rh - 6);
+        }
+      }
+
+    } else if (matType === 'wood') {
+      // Sturdy Wooden Bridge / Plank Way
+      ctx.fillStyle = '#5c3514';
+      ctx.fillRect(0, 0, 512, 512);
+      const plankW = 512 / 6;
+      for (let p = 0; p < 6; p++) {
+        const s = Math.floor(95 + Math.random() * 30);
+        ctx.fillStyle = `rgb(${s + 20}, ${s - 15}, ${s - 40})`;
+        ctx.fillRect(p * plankW + 2, 0, plankW - 4, 512);
+        // Rivets/Nails
+        ctx.fillStyle = '#1c1917';
+        ctx.beginPath();
+        ctx.arc(p * plankW + plankW / 2, 32, 4, 0, Math.PI * 2);
+        ctx.arc(p * plankW + plankW / 2, 256, 4, 0, Math.PI * 2);
+        ctx.arc(p * plankW + plankW / 2, 480, 4, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+    } else if (matType === 'dirt') {
+      // Natural Offroad Dirt & Gravel
+      ctx.fillStyle = '#784d19';
+      ctx.fillRect(0, 0, 512, 512);
+      for (let i = 0; i < 3000; i++) {
+        ctx.fillStyle = Math.random() > 0.5 ? '#925f24' : '#593810';
+        ctx.fillRect(Math.random() * 512, Math.random() * 512, 3, 3);
+      }
+      ctx.fillStyle = 'rgba(60, 36, 12, 0.4)';
+      ctx.fillRect(96, 0, 72, 512);
+      ctx.fillRect(512 - 168, 0, 72, 512);
+
+    } else {
+      // Sheikah Cyber Neon
+      ctx.fillStyle = '#090d16';
+      ctx.fillRect(0, 0, 512, 512);
+      ctx.fillStyle = '#00f0ff';
+      ctx.fillRect(16, 0, 20, 512);
+      ctx.fillRect(512 - 36, 0, 20, 512);
+      ctx.strokeStyle = '#00e5ff';
+      ctx.lineWidth = 10;
+      ctx.setLineDash([64, 32]);
+      ctx.beginPath();
+      ctx.moveTo(256, 0);
+      ctx.lineTo(256, 512);
+      ctx.stroke();
+      ctx.fillStyle = '#38bdf8';
+      for (let y = 32; y < 512; y += 96) {
+        ctx.fillRect(140, y, 24, 24);
+        ctx.fillRect(512 - 164, y, 24, 24);
+      }
+    }
+
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.wrapS = THREE.RepeatWrapping;
+    tex.wrapT = THREE.RepeatWrapping;
+    return tex;
+  }
+
+  /**
+   * Instantiates a CONTINUOUS lofted road ribbon mesh adhering smoothly to terrain elevation
+   * with downward side skirts (zero gaps), selectable width, and continuous walls/curbs.
    */
   public buildRoadFromPlannedPath(): {
     success: boolean;
@@ -618,65 +729,212 @@ export class LevelEditorManager {
 
     const curve = new THREE.CatmullRomCurve3(this.roadPlannerPoints, this.roadPlannerIsLoop, 'centripetal', 0.5);
     const lengthMeters = curve.getLength();
-    const SEGMENT_STEP = 2.8;
-    const numSegments = Math.max(2, Math.round(lengthMeters / SEGMENT_STEP));
-    const structType = `road_${this.roadPlannerMaterial}_${this.roadPlannerWall}`;
+    const STEP_SIZE = 0.85; // dense slices for seamless curves
+    const numSteps = Math.max(8, Math.round(lengthMeters / STEP_SIZE));
+    const roadWidth = this.roadPlannerWidth; // Selectable width (3.5m, 5.5m, 8.5m, 12m)
+    const halfW = roadWidth * 0.5;
+    const wallType = this.roadPlannerWall;
+    const isSolidWall = wallType === 'racing_wall' || wallType === 'stone_wall' || wallType === 'wood_fence';
 
-    this.lastBuiltRoadSegmentIds = [];
+    const roadGroupId = `road_circuit_${Date.now()}`;
+    const roadGroup = new THREE.Group();
+    roadGroup.name = roadGroupId;
+    this.lastBuiltRoadSegmentIds = [roadGroupId];
 
-    // 1. Place road segments along curve
-    for (let i = 0; i < numSegments; i++) {
-      const u = this.roadPlannerIsLoop ? i / numSegments : i / Math.max(1, numSegments - 1);
+    // Buffers for Continuous Roadbed Ribbon (5 vertices per cross-section)
+    const roadPositions: number[] = [];
+    const roadUvs: number[] = [];
+    const roadIndices: number[] = [];
+
+    // Buffers for Continuous Side Barriers / Curbs
+    const wallPositions: number[] = [];
+    const wallUvs: number[] = [];
+    const wallIndices: number[] = [];
+
+    const wallH = wallType === 'curbs_only' ? 0.22 : 1.25;
+    const wallThick = wallType === 'curbs_only' ? 0.5 : 0.35;
+
+    // 1. Generate Slices along Curve
+    for (let i = 0; i <= numSteps; i++) {
+      const u = this.roadPlannerIsLoop && i === numSteps ? 0 : i / numSteps;
       const pos = curve.getPointAt(u);
-      const tangent = curve.getTangentAt(u);
-      const angleY = Math.atan2(tangent.x, tangent.z);
+      const tan = curve.getTangentAt(u);
+      const norm = new THREE.Vector3(-tan.z, 0, tan.x).normalize();
 
-      const groundY = TerrainManager.getTerrainHeight(pos.x, pos.z);
+      // Terrain Heights
+      const yCenter = TerrainManager.getTerrainHeight(pos.x, pos.z) + 0.12;
 
-      // Level terrain smoothly under roadbed
-      this.flattenTerrainUnderRoad(pos.x, pos.z, groundY, this.roadPlannerWidth * 0.75);
+      const posL = pos.clone().addScaledVector(norm, -halfW);
+      const yL = TerrainManager.getTerrainHeight(posL.x, posL.z) + 0.12;
 
-      // Clear grass & flowers so they never poke through
-      this.foliageManager.removeGrassInRadius(pos.x, pos.z, this.roadPlannerWidth * 0.7);
+      const posR = pos.clone().addScaledVector(norm, halfW);
+      const yR = TerrainManager.getTerrainHeight(posR.x, posR.z) + 0.12;
 
-      // Place road structure
-      const mesh = this.buildingSystem.placeBuildingAt(structType, new THREE.Vector3(pos.x, groundY + 0.05, pos.z), angleY);
+      // 100% Foliage & Flower Clearing with buffer
+      this.foliageManager.removeGrassInRadius(pos.x, pos.z, halfW + 2.4);
 
-      const id = `road_seg_${Date.now()}_${i}_${Math.floor(Math.random() * 1000)}`;
-      this.placedObjects.push({
-        id,
-        type: structType,
-        position: { x: pos.x, y: groundY + 0.05, z: pos.z },
-        rotationY: angleY,
-        mesh,
-      });
-      this.lastBuiltRoadSegmentIds.push(id);
+      // Smooth terrain under road so no micro-spikes penetrate
+      this.flattenTerrainUnderRoad(pos.x, pos.z, (yL + yR + yCenter) / 3 - 0.12, halfW * 1.15);
+
+      // --- Roadbed Cross-Section (5 Vertices) ---
+      // 0: Skirt bottom left (-1.2m into ground to seal all terrain gaps)
+      roadPositions.push(posL.x, yL - 1.2, posL.z);
+      // 1: Road left edge
+      roadPositions.push(posL.x, yL, posL.z);
+      // 2: Road center (slight 4cm camber for realism)
+      roadPositions.push(pos.x, Math.max(yCenter, (yL + yR) / 2 + 0.04), pos.z);
+      // 3: Road right edge
+      roadPositions.push(posR.x, yR, posR.z);
+      // 4: Skirt bottom right (-1.2m into ground)
+      roadPositions.push(posR.x, yR - 1.2, posR.z);
+
+      const v = (i / numSteps) * (lengthMeters / 4.0);
+      roadUvs.push(0, v, 0, v, 0.5, v, 1, v, 1, v);
+
+      // Connect quads to next slice
+      if (i < numSteps) {
+        const baseA = i * 5;
+        const nextSlice = this.roadPlannerIsLoop && i === numSteps - 1 ? 0 : i + 1;
+        const baseB = nextSlice * 5;
+
+        // Quad 0: Left Skirt
+        roadIndices.push(baseA + 0, baseB + 0, baseB + 1);
+        roadIndices.push(baseA + 0, baseB + 1, baseA + 1);
+
+        // Quad 1: Left Driving Lane
+        roadIndices.push(baseA + 1, baseB + 1, baseB + 2);
+        roadIndices.push(baseA + 1, baseB + 2, baseA + 2);
+
+        // Quad 2: Right Driving Lane
+        roadIndices.push(baseA + 2, baseB + 2, baseB + 3);
+        roadIndices.push(baseA + 2, baseB + 3, baseA + 3);
+
+        // Quad 3: Right Skirt
+        roadIndices.push(baseA + 3, baseB + 3, baseB + 4);
+        roadIndices.push(baseA + 3, baseB + 4, baseA + 4);
+      }
+
+      // --- Continuous Side Barriers / Curbs ---
+      if (wallType !== 'none') {
+        const wBaseIdx = i * 8;
+        // Left Wall: 4 vertices (inner base, inner top, outer top, outer base)
+        wallPositions.push(posL.x, yL, posL.z);
+        wallPositions.push(posL.x, yL + wallH, posL.z);
+        wallPositions.push(posL.x - norm.x * wallThick, yL + wallH, posL.z - norm.z * wallThick);
+        wallPositions.push(posL.x - norm.x * wallThick, yL - 0.4, posL.z - norm.z * wallThick);
+
+        // Right Wall: 4 vertices (inner base, inner top, outer top, outer base)
+        wallPositions.push(posR.x, yR, posR.z);
+        wallPositions.push(posR.x, yR + wallH, posR.z);
+        wallPositions.push(posR.x + norm.x * wallThick, yR + wallH, posR.z + norm.z * wallThick);
+        wallPositions.push(posR.x + norm.x * wallThick, yR - 0.4, posR.z + norm.z * wallThick);
+
+        const wv = (i / numSteps) * (lengthMeters / 2.0);
+        for (let k = 0; k < 8; k++) wallUvs.push(k % 2 === 0 ? 0 : 1, wv);
+
+        if (i < numSteps) {
+          const nextW = this.roadPlannerIsLoop && i === numSteps - 1 ? 0 : i + 1;
+          const wBaseB = nextW * 8;
+
+          // Left Wall Faces: Top & Inner
+          wallIndices.push(wBaseIdx + 0, wBaseB + 0, wBaseB + 1);
+          wallIndices.push(wBaseIdx + 0, wBaseB + 1, wBaseIdx + 1);
+          wallIndices.push(wBaseIdx + 1, wBaseB + 1, wBaseB + 2);
+          wallIndices.push(wBaseIdx + 1, wBaseB + 2, wBaseIdx + 2);
+          wallIndices.push(wBaseIdx + 2, wBaseB + 2, wBaseB + 3);
+          wallIndices.push(wBaseIdx + 2, wBaseB + 3, wBaseIdx + 3);
+
+          // Right Wall Faces: Top & Inner
+          wallIndices.push(wBaseIdx + 4, wBaseB + 4, wBaseB + 5);
+          wallIndices.push(wBaseIdx + 4, wBaseB + 5, wBaseIdx + 5);
+          wallIndices.push(wBaseIdx + 5, wBaseB + 5, wBaseB + 6);
+          wallIndices.push(wBaseIdx + 5, wBaseB + 6, wBaseIdx + 6);
+          wallIndices.push(wBaseIdx + 6, wBaseB + 6, wBaseB + 7);
+          wallIndices.push(wBaseIdx + 6, wBaseB + 7, wBaseIdx + 7);
+        }
+
+        // Solid Physics Colliders along wall perimeter every ~2.0m
+        if (isSolidWall && i % 2 === 0) {
+          this.buildingSystem.obstacles.push({
+            id: `${roadGroupId}_wl_${i}`,
+            type: 'prop',
+            x: posL.x,
+            z: posL.z,
+            yBase: yL,
+            height: wallH + 0.2,
+            radius: 0.55,
+          });
+          this.buildingSystem.obstacles.push({
+            id: `${roadGroupId}_wr_${i}`,
+            type: 'prop',
+            x: posR.x,
+            z: posR.z,
+            yBase: yR,
+            height: wallH + 0.2,
+            radius: 0.55,
+          });
+        }
+      }
     }
 
-    // 2. Place Start Gate if requested
-    if (this.roadPlannerHasStartGate) {
-      const p0 = curve.getPointAt(0);
-      const t0 = curve.getTangentAt(0);
-      const y0 = TerrainManager.getTerrainHeight(p0.x, p0.z);
-      const rotY0 = Math.atan2(t0.x, t0.z);
+    // 2. Build Roadbed Mesh
+    const roadGeo = new THREE.BufferGeometry();
+    roadGeo.setAttribute('position', new THREE.Float32BufferAttribute(roadPositions, 3));
+    roadGeo.setAttribute('uv', new THREE.Float32BufferAttribute(roadUvs, 2));
+    roadGeo.setIndex(roadIndices);
+    roadGeo.computeVertexNormals();
 
+    const roadTex = this.createRoadTexture(this.roadPlannerMaterial);
+    const roadMat = new THREE.MeshStandardMaterial({
+      map: roadTex,
+      roughness: this.roadPlannerMaterial === 'sheikah_neon' ? 0.35 : 0.85,
+      metalness: this.roadPlannerMaterial === 'sheikah_neon' ? 0.4 : 0.05,
+    });
+    const roadMesh = new THREE.Mesh(roadGeo, roadMat);
+    roadMesh.receiveShadow = true;
+    roadGroup.add(roadMesh);
+
+    // 3. Build Wall Mesh if enabled
+    if (wallType !== 'none') {
+      const wallGeo = new THREE.BufferGeometry();
+      wallGeo.setAttribute('position', new THREE.Float32BufferAttribute(wallPositions, 3));
+      wallGeo.setAttribute('uv', new THREE.Float32BufferAttribute(wallUvs, 2));
+      wallGeo.setIndex(wallIndices);
+      wallGeo.computeVertexNormals();
+
+      let wallMat: THREE.Material;
+      if (wallType === 'curbs_only') {
+        wallMat = new THREE.MeshStandardMaterial({ color: 0xef4444, roughness: 0.6 });
+      } else if (wallType === 'racing_wall') {
+        wallMat = new THREE.MeshStandardMaterial({ color: 0xe2e8f0, roughness: 0.4, metalness: 0.2 });
+      } else if (wallType === 'stone_wall') {
+        wallMat = new THREE.MeshStandardMaterial({ color: 0x64748b, roughness: 0.9 });
+      } else {
+        wallMat = new THREE.MeshStandardMaterial({ color: 0x78350f, roughness: 0.8 });
+      }
+
+      const wallMesh = new THREE.Mesh(wallGeo, wallMat);
+      wallMesh.castShadow = true;
+      wallMesh.receiveShadow = true;
+      roadGroup.add(wallMesh);
+    }
+
+    // 4. Place Start Gate if requested
+    const p0 = curve.getPointAt(0);
+    const t0 = curve.getTangentAt(0);
+    const y0 = TerrainManager.getTerrainHeight(p0.x, p0.z);
+    const rotY0 = Math.atan2(t0.x, t0.z);
+
+    if (this.roadPlannerHasStartGate) {
       const startGateMesh = this.buildingSystem.placeBuildingAt(
         'track_start_gate',
         new THREE.Vector3(p0.x, y0 + 0.05, p0.z),
         rotY0
       );
-      const gateId = `road_gate_start_${Date.now()}`;
-      this.placedObjects.push({
-        id: gateId,
-        type: 'track_start_gate',
-        position: { x: p0.x, y: y0 + 0.05, z: p0.z },
-        rotationY: rotY0,
-        mesh: startGateMesh,
-      });
-      this.lastBuiltRoadSegmentIds.push(gateId);
+      this.lastBuiltRoadSegmentIds.push(startGateMesh.id ? `road_gate_start_${startGateMesh.id}` : `road_gate_start_${Date.now()}`);
     }
 
-    // 3. Place Finish Gate if Sprint course (not loop) and requested
+    // 5. Place Finish Gate if Sprint course (not loop) and requested
     if (!this.roadPlannerIsLoop && this.roadPlannerHasStartGate) {
       const pEnd = curve.getPointAt(1);
       const tEnd = curve.getTangentAt(1);
@@ -688,18 +946,32 @@ export class LevelEditorManager {
         new THREE.Vector3(pEnd.x, yEnd + 0.05, pEnd.z),
         rotYEnd
       );
-      const finishId = `road_gate_finish_${Date.now()}`;
-      this.placedObjects.push({
-        id: finishId,
-        type: 'track_finish_gate',
-        position: { x: pEnd.x, y: yEnd + 0.05, z: pEnd.z },
-        rotationY: rotYEnd,
-        mesh: finishGateMesh,
-      });
-      this.lastBuiltRoadSegmentIds.push(finishId);
+      this.lastBuiltRoadSegmentIds.push(finishGateMesh.id ? `road_gate_finish_${finishGateMesh.id}` : `road_gate_finish_${Date.now()}`);
     }
 
-    // Sound fanfare & cleanup
+    // 6. Register Road Circuit to BuildingSystem & LevelEditor
+    this.buildingSystem.group.add(roadGroup);
+    const structType = `road_${this.roadPlannerMaterial}_${this.roadPlannerWall}`;
+    this.buildingSystem.structures.push({
+      mesh: roadGroup,
+      data: {
+        id: roadGroupId,
+        type: structType,
+        position: { x: p0.x, y: y0, z: p0.z },
+        rotationY: rotY0,
+        health: 9999,
+      },
+    });
+
+    this.placedObjects.push({
+      id: roadGroupId,
+      type: structType,
+      position: { x: p0.x, y: y0, z: p0.z },
+      rotationY: rotY0,
+      mesh: roadGroup,
+    });
+
+    // Audio Fanfare & Path Reset
     audioEngine.playShrineFanfare();
     this.clearPlannedPath();
 
@@ -717,8 +989,8 @@ export class LevelEditorManager {
 
     return {
       success: true,
-      message: `🛣️ ${modeName} (${matName}) erfolgreich gebaut! (${lengthMeters.toFixed(1)}m, ${numSegments} Segmente)`,
-      segmentCount: numSegments,
+      message: `🏎️ ${modeName} (${matName}, ${roadWidth.toFixed(1)}m Breit) nahtlos gebaut! (${lengthMeters.toFixed(1)}m)`,
+      segmentCount: numSteps,
       lengthMeters,
     };
   }
@@ -840,9 +1112,15 @@ export class LevelEditorManager {
       objType === 'camp_tent' ||
       objType === 'barrel_stack' ||
       objType === 'crate_wooden' ||
-      objType === 'target_dummy'
+      objType === 'target_dummy' ||
+      objType === 'track_finish_gate' ||
+      objType === 'track_pylon' ||
+      objType === 'track_tires' ||
+      objType === 'track_barrier' ||
+      objType === 'track_boost_pad' ||
+      objType === 'track_coin'
     ) {
-      this.buildingSystem.placeBuildingAt(objType, new THREE.Vector3(worldX, y, worldZ), 0);
+      newMesh = this.buildingSystem.placeBuildingAt(objType, new THREE.Vector3(worldX, y, worldZ), 0);
     } else if (objType === 'enemy_goomba') {
       this.enemyManager.createGoomba(id, worldX, worldZ);
     } else if (objType === 'enemy_boblin') {

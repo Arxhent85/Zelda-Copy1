@@ -52,6 +52,7 @@ export const LevelEditorUI: React.FC<LevelEditorUIProps> = ({
   const [roadMaterial, setRoadMaterial] = useState<RoadMaterialType>(editor.roadPlannerMaterial || 'asphalt');
   const [roadWall, setRoadWall] = useState<RoadWallType>(editor.roadPlannerWall || 'racing_wall');
   const [roadIsLoop, setRoadIsLoop] = useState<boolean>(editor.roadPlannerIsLoop || false);
+  const [roadWidth, setRoadWidth] = useState<number>(editor.roadPlannerWidth || 7.5);
   const [roadHasGate, setRoadHasGate] = useState<boolean>(editor.roadPlannerHasStartGate ?? true);
   const [roadPathInfo, setRoadPathInfo] = useState<{ pointCount: number; lengthMeters: number; estimatedSegments: number }>({
     pointCount: editor.roadPlannerPoints.length,
@@ -129,6 +130,12 @@ export const LevelEditorUI: React.FC<LevelEditorUIProps> = ({
     setRoadWall(wall);
     editor.setRoadWall(wall);
     onToast(`Barriere / Wand: ${wall}`);
+  };
+
+  const handleRoadWidthChange = (w: number) => {
+    setRoadWidth(w);
+    editor.setRoadWidth(w);
+    onToast(`🛣️ Fahrbahnbreite: ${w.toFixed(1)}m`);
   };
 
   const handleToggleRoadLoop = (loop: boolean) => {
@@ -600,9 +607,59 @@ export const LevelEditorUI: React.FC<LevelEditorUIProps> = ({
                     </div>
                   </div>
 
+                  {/* 2. Straßenbreite & Fahrbahngröße */}
+                  <div className="flex flex-col gap-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                        2. Fahrbahnbreite ({roadWidth.toFixed(1)} Meter)
+                      </span>
+                      <span className="text-[11px] font-black text-amber-300 bg-amber-500/20 px-2 py-0.5 rounded-md border border-amber-500/30">
+                        {roadWidth <= 4.2 ? '🏎️ Schmal' : roadWidth <= 6.8 ? '🛣️ Standard' : roadWidth <= 9.8 ? '🏁 Rennstrecke (Breit)' : '⚡ Super-Breit'}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                      {[
+                        { width: 3.8, label: 'Schmal', meters: '3.8m', desc: 'Waldweg / Pfad' },
+                        { width: 5.5, label: 'Standard', meters: '5.5m', desc: 'Dorfstraße' },
+                        { width: 8.5, label: 'Breit (Rennstrecke)', meters: '8.5m', desc: 'Perfekt für Rennen' },
+                        { width: 12.0, label: 'Super-Breit', meters: '12.0m', desc: 'Autobahn / Mega-Kurs' },
+                      ].map((w) => (
+                        <button
+                          key={w.width}
+                          onClick={() => handleRoadWidthChange(w.width)}
+                          className={`flex flex-col items-center justify-center p-2 rounded-xl border text-xs transition ${
+                            Math.abs(roadWidth - w.width) < 0.2
+                              ? 'bg-amber-500/25 border-amber-400 text-amber-200 shadow-md font-bold ring-2 ring-amber-500/40'
+                              : 'bg-slate-900 border-white/10 text-slate-300 hover:bg-slate-800'
+                          }`}
+                        >
+                          <span className="font-black text-sm text-amber-300">{w.meters}</span>
+                          <span className="mt-0.5 font-bold text-xs">{w.label}</span>
+                          <span className="text-[9px] text-slate-400 text-center">{w.desc}</span>
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* Fine-tuning Slider */}
+                    <div className="flex items-center gap-3 px-1 pt-1">
+                      <span className="text-[10px] text-slate-400 font-mono">2.5m</span>
+                      <input
+                        type="range"
+                        min="2.5"
+                        max="16.0"
+                        step="0.5"
+                        value={roadWidth}
+                        onChange={(e) => handleRoadWidthChange(parseFloat(e.target.value))}
+                        className="flex-1 h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-amber-400"
+                      />
+                      <span className="text-[10px] text-slate-400 font-mono">16.0m</span>
+                    </div>
+                  </div>
+
                   {/* 3. Straßenbelag / Material */}
                   <div className="flex flex-col gap-1.5">
-                    <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">2. Straßenbelag & Material</span>
+                    <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">3. Straßenbelag & Material</span>
                     <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
                       {[
                         { id: 'asphalt', label: 'Asphalt', icon: '🏁', desc: 'Rennstrecke & Streifen' },
@@ -630,7 +687,7 @@ export const LevelEditorUI: React.FC<LevelEditorUIProps> = ({
 
                   {/* 4. Begrenzungswände & Barrieren */}
                   <div className="flex flex-col gap-1.5">
-                    <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">3. Barrieren & Begrenzungsmauern</span>
+                    <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">4. Barrieren & Begrenzungsmauern</span>
                     <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
                       {[
                         { id: 'racing_wall', label: 'Rennmauer', icon: '🏎️', desc: '1.25m Curbs & Bande' },
@@ -752,8 +809,14 @@ export const LevelEditorUI: React.FC<LevelEditorUIProps> = ({
                   <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
                     {(objectCategory === 'roads'
                       ? [
-                          { type: 'walled_road', name: 'Straße mit Wänden', icon: '🏎️' },
-                          { type: 'track_start_gate', name: 'Start/Ziel Tor', icon: '🏁' },
+                          { type: 'track_start_gate', name: 'Start-Tor', icon: '🏁' },
+                          { type: 'track_finish_gate', name: 'Ziel-Tor', icon: '🏆' },
+                          { type: 'track_pylon', name: 'Pylone', icon: '🔶' },
+                          { type: 'track_tires', name: 'Reifenstapel', icon: '🛞' },
+                          { type: 'track_boost_pad', name: 'Turbo-Boost-Pad', icon: '⚡' },
+                          { type: 'track_barrier', name: 'Beton-Barriere', icon: '🚧' },
+                          { type: 'track_coin', name: 'Rupee-Münze', icon: '💎' },
+                          { type: 'walled_road', name: 'Straßen-Block', icon: '🏎️' },
                           { type: 'catan_road', name: 'Catan-Weg', icon: '🛤️' },
                         ]
                       : objectCategory === 'nature'

@@ -38,6 +38,7 @@ export class AvatarHero {
   public mantleMesh: THREE.Mesh | null = null;
 
   // Body Parts & Joint Hierarchy
+  public currentEquippedToolType: string = 'sword';
   public torso: THREE.Mesh;
   public head: THREE.Group;
   public hairPonytail: THREE.Group;
@@ -598,6 +599,119 @@ export class AvatarHero {
   }
 
   /**
+   * Generates a high-definition anime eye decal texture on an offscreen canvas
+   */
+  public createAnimeEyeTexture(irisColorHex: number, isSlit: boolean = false): THREE.CanvasTexture {
+    const canvas = document.createElement('canvas');
+    canvas.width = 256;
+    canvas.height = 256;
+    const ctx = canvas.getContext('2d')!;
+
+    ctx.clearRect(0, 0, 256, 256);
+
+    // 1. Sclera (White eye background with clean almond shape)
+    ctx.beginPath();
+    ctx.ellipse(128, 128, 92, 74, 0, 0, Math.PI * 2);
+    ctx.fillStyle = '#ffffff';
+    ctx.fill();
+
+    // Subtle upper eyelid shadow
+    const scleraGrad = ctx.createLinearGradient(128, 60, 128, 120);
+    scleraGrad.addColorStop(0, 'rgba(195, 205, 222, 0.6)');
+    scleraGrad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+    ctx.fillStyle = scleraGrad;
+    ctx.fill();
+
+    // 2. Iris (Large, radiant anime iris)
+    const irisX = 128;
+    const irisY = 130;
+    const irisR = 60;
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.ellipse(irisX, irisY, irisR, irisR * 1.08, 0, 0, Math.PI * 2);
+    ctx.clip();
+
+    // Rich multi-stop vertical gradient
+    const hex = irisColorHex.toString(16).padStart(6, '0');
+    const irisGrad = ctx.createLinearGradient(irisX, irisY - irisR, irisX, irisY + irisR);
+    irisGrad.addColorStop(0, '#090d16');
+    irisGrad.addColorStop(0.35, '#' + hex);
+    irisGrad.addColorStop(0.8, '#38bdf8');
+    irisGrad.addColorStop(1, '#bae6fd');
+    ctx.fillStyle = irisGrad;
+    ctx.fill();
+
+    // Lower luminous inner reflection ring
+    ctx.beginPath();
+    ctx.ellipse(irisX, irisY + 28, 38, 20, 0, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.42)';
+    ctx.fill();
+
+    // 3. Pupil
+    ctx.beginPath();
+    if (isSlit) {
+      ctx.ellipse(irisX, irisY, 11, 46, 0, 0, Math.PI * 2);
+    } else {
+      ctx.ellipse(irisX, irisY - 3, 22, 26, 0, 0, Math.PI * 2);
+    }
+    ctx.fillStyle = '#090d16';
+    ctx.fill();
+
+    // Soft top shadow inside iris
+    const irisShadow = ctx.createLinearGradient(irisX, irisY - irisR, irisX, irisY + 5);
+    irisShadow.addColorStop(0, 'rgba(0, 0, 0, 0.65)');
+    irisShadow.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    ctx.fillStyle = irisShadow;
+    ctx.fill();
+
+    ctx.restore();
+
+    // 4. Twin Anime Specular Catchlights (Crisp white sparkle reflections)
+    // Primary main catchlight (upper left)
+    ctx.beginPath();
+    ctx.ellipse(106, 102, 16, 18, -0.25, 0, Math.PI * 2);
+    ctx.fillStyle = '#ffffff';
+    ctx.fill();
+
+    // Secondary cute catchlight (lower right)
+    ctx.beginPath();
+    ctx.ellipse(150, 156, 8, 8, 0, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+    ctx.fill();
+
+    // 5. Stylized Upper Eyeliner & Lashes (Crisp anime contour)
+    ctx.beginPath();
+    ctx.moveTo(38, 134);
+    ctx.bezierCurveTo(72, 65, 185, 65, 220, 132);
+    ctx.bezierCurveTo(185, 52, 72, 52, 38, 134);
+    ctx.fillStyle = '#1e293b';
+    ctx.fill();
+
+    // Outer lash flick
+    ctx.beginPath();
+    ctx.moveTo(212, 126);
+    ctx.lineTo(236, 115);
+    ctx.lineTo(218, 136);
+    ctx.closePath();
+    ctx.fillStyle = '#1e293b';
+    ctx.fill();
+
+    // Delicate lower lash curve
+    ctx.beginPath();
+    ctx.moveTo(68, 174);
+    ctx.quadraticCurveTo(128, 196, 188, 174);
+    ctx.strokeStyle = 'rgba(30, 41, 59, 0.6)';
+    ctx.lineWidth = 4;
+    ctx.stroke();
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.needsUpdate = true;
+    return texture;
+  }
+
+  /**
    * Switches avatar archetype between 4 distinct characters:
    * 1. 'hylian_hero': Champion Link (Männlich)
    * 2. 'princess_zelda': Royal Wisdom Priestess Zelda (Weiblich)
@@ -669,52 +783,94 @@ export class AvatarHero {
       this.lipMat.color.setHex(0xbe5b6a);
     }
 
-    // 2. Base Organic Cranium & Sculpted Facial Foundation
-    const craniumGeo = new THREE.SphereGeometry(0.195, 24, 20);
-    craniumGeo.scale(0.96, 1.05, 0.98);
+    // 2. Sculpted Anatomical Neck & Seamless Anime Head
+    const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.068, 0.082, 0.16, 20), this.skinMat);
+    neck.position.set(0, -0.16, -0.015);
+    neck.rotation.x = 0.06;
+    neck.castShadow = true;
+    this.headVisuals.add(neck);
+
+    // Sculpted organic anime cranium & face
+    const craniumGeo = new THREE.SphereGeometry(0.185, 32, 24);
+    craniumGeo.scale(0.95, 1.05, 0.98);
     const cranium = new THREE.Mesh(craniumGeo, this.skinMat);
-    cranium.position.set(0, 0.02, -0.01);
+    cranium.position.set(0, 0.02, 0);
     cranium.castShadow = true;
     cranium.receiveShadow = true;
     this.headVisuals.add(cranium);
 
-    const midFaceGeo = new THREE.CylinderGeometry(0.185, 0.155, 0.18, 24);
-    midFaceGeo.scale(1.0, 1.0, 0.95);
-    const midFace = new THREE.Mesh(midFaceGeo, this.skinMat);
-    midFace.position.set(0, -0.06, 0.01);
-    midFace.castShadow = true;
-    midFace.receiveShadow = true;
-    this.headVisuals.add(midFace);
+    // Smooth tapering anime jawline (blends seamlessly from ears down to chin)
+    const jawGeo = new THREE.CylinderGeometry(0.175, 0.095, 0.16, 28);
+    jawGeo.scale(0.92, 1.0, 0.88);
+    const jaw = new THREE.Mesh(jawGeo, this.skinMat);
+    jaw.position.set(0, -0.085, 0.015);
+    jaw.castShadow = true;
+    jaw.receiveShadow = true;
+    this.headVisuals.add(jaw);
 
-    const chinGeo = new THREE.SphereGeometry(0.082, 18, 16);
-    chinGeo.scale(1.0, 0.85, 1.15);
+    // Gentle rounded anime chin
+    const chinGeo = new THREE.SphereGeometry(0.062, 20, 16);
+    chinGeo.scale(0.85, 0.8, 1.05);
     const chin = new THREE.Mesh(chinGeo, this.skinMat);
-    chin.position.set(0, -0.19, 0.065);
+    chin.position.set(0, -0.165, 0.052);
     chin.castShadow = true;
     chin.receiveShadow = true;
     this.headVisuals.add(chin);
 
-    // Nose & Smile
-    const noseBridge = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.013, 0.055, 8), this.skinMat);
-    noseBridge.position.set(0, 0.005, 0.188);
-    noseBridge.rotation.x = 0.32;
-    noseBridge.castShadow = true;
-    this.headVisuals.add(noseBridge);
+    // Delicate anime nose tip (subtle and stylish, not a protruding pipe)
+    const nose = new THREE.Mesh(new THREE.ConeGeometry(0.01, 0.038, 4), this.skinMat);
+    nose.position.set(0, -0.012, 0.186);
+    nose.rotation.x = 0.25;
+    nose.castShadow = true;
+    this.headVisuals.add(nose);
 
-    const noseTip = new THREE.Mesh(new THREE.SphereGeometry(0.012, 10, 8), this.skinMat);
-    noseTip.position.set(0, -0.018, 0.198);
-    noseTip.castShadow = true;
-    this.headVisuals.add(noseTip);
+    // Soft, friendly anime smile line
+    const mouthGeo = new THREE.TorusGeometry(0.024, 0.0035, 6, 12, Math.PI * 0.55);
+    const mouth = new THREE.Mesh(mouthGeo, this.lipMat);
+    mouth.position.set(0, -0.088, 0.168);
+    mouth.rotation.set(-0.1, 0, Math.PI + 0.28);
+    this.headVisuals.add(mouth);
 
-    const smileArc = new THREE.Mesh(new THREE.TorusGeometry(0.028, 0.004, 6, 12, Math.PI * 0.55), this.lipMat);
-    smileArc.position.set(0, -0.082, 0.182);
-    smileArc.rotation.set(-0.1, 0, Math.PI + 0.28);
-    this.headVisuals.add(smileArc);
+    // 3. Stylized High-Definition Anime Eyes
+    let eyeIrisColor = 0x0284c7; // Brilliant Sapphire for Link
+    let isSlitPupil = false;
+    if (variant === 'princess_zelda') {
+      eyeIrisColor = 0x059669; // Royal Emerald for Zelda
+    } else if (variant === 'kitsune_beast') {
+      eyeIrisColor = 0xd97706; // Amber Gold
+      isSlitPupil = true;
+    } else if (variant === 'dragon_warrior') {
+      eyeIrisColor = 0xdc2626; // Magma Red
+      isSlitPupil = true;
+    }
 
-    const lowerLip = new THREE.Mesh(new THREE.SphereGeometry(0.008, 8, 6), this.lipMat);
-    lowerLip.scale.set(1.5, 0.5, 0.6);
-    lowerLip.position.set(0, -0.096, 0.178);
-    this.headVisuals.add(lowerLip);
+    const leftEyeTex = this.createAnimeEyeTexture(eyeIrisColor, isSlitPupil);
+    const rightEyeTex = this.createAnimeEyeTexture(eyeIrisColor, isSlitPupil);
+    rightEyeTex.repeat.x = -1;
+    rightEyeTex.offset.x = 1;
+
+    const eyeGeo = new THREE.PlaneGeometry(0.086, 0.096);
+    for (const isLeft of [true, false]) {
+      const side = isLeft ? -1 : 1;
+      const eyeMat = new THREE.MeshStandardMaterial({
+        map: isLeft ? leftEyeTex : rightEyeTex,
+        transparent: true,
+        roughness: 0.25,
+        metalness: 0.02,
+        depthWrite: false,
+      });
+      const eyeMesh = new THREE.Mesh(eyeGeo, eyeMat);
+      eyeMesh.position.set(side * 0.076, 0.018, 0.178);
+      eyeMesh.rotation.set(-0.06, side * 0.22, 0);
+      this.headVisuals.add(eyeMesh);
+
+      // Heroic Eyebrows (Positioned above eyes on the brow ridge)
+      const browGeo = new THREE.CylinderGeometry(0.0035, 0.0065, 0.072, 8);
+      const brow = new THREE.Mesh(browGeo, this.eyebrowMat);
+      brow.position.set(side * 0.076, 0.072, 0.175);
+      brow.rotation.set(-0.08, side * 0.22, isLeft ? 1.48 : -1.48);
+      this.headVisuals.add(brow);
+    }
 
     // Cheek Accents
     if (variant === 'kitsune_beast') {
@@ -727,109 +883,16 @@ export class AvatarHero {
           this.headVisuals.add(whisker);
         }
       }
-    } else {
-      const blushGeo = new THREE.SphereGeometry(0.045, 14, 10);
-      blushGeo.scale(1.2, 0.65, 0.25);
+    } else if (variant === 'princess_zelda') {
+      const blushGeo = new THREE.SphereGeometry(0.038, 12, 8);
+      blushGeo.scale(1.2, 0.6, 0.2);
       const leftBlush = new THREE.Mesh(blushGeo, this.blushMat);
-      leftBlush.position.set(-0.108, -0.05, 0.162);
-      leftBlush.rotation.set(0.1, -0.3, -0.15);
+      leftBlush.position.set(-0.1, -0.05, 0.16);
       this.headVisuals.add(leftBlush);
-
-      const rightBlush = new THREE.Mesh(blushGeo, this.blushMat);
-      rightBlush.position.set(0.108, -0.05, 0.162);
-      rightBlush.rotation.set(0.1, 0.3, 0.15);
+      const rightBlush = leftBlush.clone();
+      rightBlush.position.x = 0.1;
       this.headVisuals.add(rightBlush);
     }
-
-    // 3. Variant Specific Eyes
-    const eyeWhiteMat = new THREE.MeshBasicMaterial({ color: 0xf8fafc });
-    let outerColor = 0x0369a1;
-    let coreColor = 0x38bdf8;
-    let pupilColor = 0x0f172a;
-    let isSlitPupil = false;
-
-    if (variant === 'princess_zelda') {
-      outerColor = 0x059669; // Emerald green
-      coreColor = 0x10b981;
-    } else if (variant === 'kitsune_beast') {
-      outerColor = 0xd97706; // Amber gold
-      coreColor = 0xfbbf24;
-      isSlitPupil = true;
-    } else if (variant === 'dragon_warrior') {
-      outerColor = 0x991b1b; // Magma red
-      coreColor = 0xf97316;
-      pupilColor = 0x09090b;
-      isSlitPupil = true;
-    }
-
-    const eyeIrisOuterMat = new THREE.MeshBasicMaterial({ color: outerColor });
-    const eyeIrisCoreMat = new THREE.MeshBasicMaterial({ color: coreColor });
-    const eyePupilMat = new THREE.MeshBasicMaterial({ color: pupilColor });
-    const eyeHighlightMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
-    const eyeLashMat = new THREE.MeshBasicMaterial({ color: 0x1e293b });
-
-    const createEye = (isLeft: boolean) => {
-      const eyeGroup = new THREE.Group();
-      const side = isLeft ? -1 : 1;
-      eyeGroup.position.set(side * 0.088, 0.022, 0.178);
-      eyeGroup.rotation.y = side * 0.22;
-      eyeGroup.rotation.x = -0.04;
-
-      const scleraGeo = new THREE.SphereGeometry(0.052, 14, 10, 0, Math.PI * 2, 0, Math.PI * 0.42);
-      scleraGeo.scale(0.9, 0.72, 0.28);
-      const sclera = new THREE.Mesh(scleraGeo, eyeWhiteMat);
-      sclera.rotation.x = Math.PI / 2;
-      eyeGroup.add(sclera);
-
-      const irisOuter = new THREE.Mesh(new THREE.CylinderGeometry(0.029, 0.029, 0.008, 16), eyeIrisOuterMat);
-      irisOuter.rotation.x = Math.PI / 2;
-      irisOuter.position.z = 0.012;
-      eyeGroup.add(irisOuter);
-
-      const irisCore = new THREE.Mesh(new THREE.CylinderGeometry(0.019, 0.019, 0.009, 14), eyeIrisCoreMat);
-      irisCore.rotation.x = Math.PI / 2;
-      irisCore.position.z = 0.013;
-      eyeGroup.add(irisCore);
-
-      if (isSlitPupil) {
-        // Vertical Cat / Beast / Reptile Pupil
-        const slit = new THREE.Mesh(new THREE.BoxGeometry(0.006, 0.032, 0.01), eyePupilMat);
-        slit.position.z = 0.014;
-        eyeGroup.add(slit);
-      } else {
-        const pupil = new THREE.Mesh(new THREE.CylinderGeometry(0.011, 0.011, 0.011, 12), eyePupilMat);
-        pupil.rotation.x = Math.PI / 2;
-        pupil.position.z = 0.014;
-        eyeGroup.add(pupil);
-      }
-
-      const highlight1 = new THREE.Mesh(new THREE.SphereGeometry(0.007, 8, 8), eyeHighlightMat);
-      highlight1.position.set(side * -0.009, 0.011, 0.017);
-      eyeGroup.add(highlight1);
-
-      const lashCurve = new THREE.Mesh(new THREE.TorusGeometry(0.045, 0.006, 6, 14, Math.PI * 0.58), eyeLashMat);
-      lashCurve.position.set(side * 0.004, 0.008, 0.014);
-      lashCurve.rotation.z = isLeft ? 0.35 : Math.PI - 0.35;
-      eyeGroup.add(lashCurve);
-
-      const browGeo = new THREE.CylinderGeometry(0.004, 0.007, 0.075, 8);
-      const brow = new THREE.Mesh(browGeo, this.eyebrowMat);
-      brow.position.set(side * -0.002, 0.048, 0.013);
-      brow.rotation.z = isLeft ? 1.42 : -1.42;
-      eyeGroup.add(brow);
-
-      return eyeGroup;
-    };
-    this.headVisuals.add(createEye(true));
-    this.headVisuals.add(createEye(false));
-
-    // 4. Variant Specific Ears, Horns, Diadem & Hair
-    const hairCapGeo = new THREE.SphereGeometry(0.222, 24, 18);
-    hairCapGeo.scale(1.02, 1.05, 1.03);
-    const hairCap = new THREE.Mesh(hairCapGeo, this.hairMat);
-    hairCap.position.set(0, 0.06, -0.02);
-    hairCap.castShadow = true;
-    this.headVisuals.add(hairCap);
 
     if (variant === 'princess_zelda') {
       // --- PRINCESS ZELDA ---
@@ -989,55 +1052,109 @@ export class AvatarHero {
       this.tail.add(spearTip);
 
     } else {
-      // --- HYLIAN HERO LINK ---
-      // Pointed Elven Ears with Gold Hoop Earrings & Stud
+      // --- HYLIAN HERO LINK (AUTHENTIC CHAMPION HAIR & NATURAL ELVEN EARS) ---
+      // 1. Natural Crown Hair Volume (covers skull comfortably without clipping eyes)
+      const hairCapGeo = new THREE.SphereGeometry(0.202, 32, 20, 0, Math.PI * 2, 0, Math.PI * 0.54);
+      hairCapGeo.scale(1.02, 1.05, 1.04);
+      const hairCap = new THREE.Mesh(hairCapGeo, this.hairMat);
+      hairCap.position.set(0, 0.045, -0.015);
+      hairCap.castShadow = true;
+      this.headVisuals.add(hairCap);
+
+      // Back sweep hair volume down toward neck
+      const backHairGeo = new THREE.SphereGeometry(0.19, 24, 16, 0, Math.PI, 0, Math.PI * 0.65);
+      backHairGeo.scale(0.98, 1.05, 0.95);
+      const backHair = new THREE.Mesh(backHairGeo, this.hairMat);
+      backHair.position.set(0, 0.01, -0.04);
+      backHair.rotation.y = Math.PI;
+      backHair.castShadow = true;
+      this.headVisuals.add(backHair);
+
+      // 2. Feathered Layered Anime Bangs (Breath of the Wild Center-Parted Fringe)
+      // Left forehead swept locks
+      for (let b = 0; b < 3; b++) {
+        const bang = new THREE.Mesh(new THREE.ConeGeometry(0.038 - b * 0.005, 0.22 + b * 0.03, 8), this.hairMat);
+        bang.scale.set(1.0, 1.0, 0.4);
+        bang.position.set(-0.035 - b * 0.046, 0.11 - b * 0.02, 0.175);
+        bang.rotation.set(0.32, 0.15 + b * 0.1, 0.45 + b * 0.15);
+        this.headVisuals.add(bang);
+      }
+      // Right forehead swept locks
+      for (let b = 0; b < 3; b++) {
+        const bang = new THREE.Mesh(new THREE.ConeGeometry(0.04 - b * 0.005, 0.23 + b * 0.03, 8), this.hairMat);
+        bang.scale.set(1.0, 1.0, 0.4);
+        bang.position.set(0.035 + b * 0.046, 0.11 - b * 0.02, 0.175);
+        bang.rotation.set(0.3, -0.15 - b * 0.1, -0.45 - b * 0.15);
+        this.headVisuals.add(bang);
+      }
+      // Center part accent flick
+      const centerFlick = new THREE.Mesh(new THREE.ConeGeometry(0.026, 0.14, 6), this.hairMat);
+      centerFlick.position.set(-0.01, 0.13, 0.185);
+      centerFlick.rotation.set(0.4, 0.05, 0.1);
+      this.headVisuals.add(centerFlick);
+
+      // 3. Iconic Face-Framing Side Locks with Champion Blue Wraps
+      const wrapMat = new THREE.MeshStandardMaterial({ color: 0x0284c7, roughness: 0.5 });
       for (const side of [-1, 1]) {
-        const ear = new THREE.Mesh(new THREE.ConeGeometry(0.052, 0.23, 14), this.skinMat);
-        ear.scale.set(0.85, 1.0, 0.45);
-        ear.position.set(side * 0.185, 0.015, -0.025);
-        ear.rotation.set(0.15, side * -0.42, side * 1.32);
-        this.headVisuals.add(ear);
+        // Upper side lock
+        const sideLockUpper = new THREE.Mesh(new THREE.ConeGeometry(0.038, 0.26, 10), this.hairMat);
+        sideLockUpper.scale.set(1.0, 1.0, 0.5);
+        sideLockUpper.position.set(side * 0.165, -0.04, 0.10);
+        sideLockUpper.rotation.set(0.12, 0, side * -0.08);
+        this.headVisuals.add(sideLockUpper);
 
-        const earring = new THREE.Mesh(new THREE.TorusGeometry(0.02, 0.005, 8, 16), this.goldMat);
-        earring.position.set(side * 0.21, -0.04, -0.03);
+        // Lower side lock extending to collarbone
+        const sideLockLower = new THREE.Mesh(new THREE.ConeGeometry(0.032, 0.24, 8), this.hairMat);
+        sideLockLower.scale.set(1.0, 1.0, 0.5);
+        sideLockLower.position.set(side * 0.165, -0.18, 0.09);
+        sideLockLower.rotation.set(0.08, 0, side * -0.04);
+        this.headVisuals.add(sideLockLower);
+
+        // Champion Blue Wrap Ring
+        const wrapRing = new THREE.Mesh(new THREE.TorusGeometry(0.028, 0.009, 6, 12), wrapMat);
+        wrapRing.rotation.x = Math.PI / 2;
+        wrapRing.position.set(side * 0.165, -0.15, 0.09);
+        this.headVisuals.add(wrapRing);
+
+        // 4. Hylian Elven Ears (Angled naturally backward and slightly up, with gold earring)
+        const earGroup = new THREE.Group();
+        earGroup.position.set(side * 0.165, 0.005, -0.035);
+        earGroup.rotation.set(0.12, side * -0.72, side * 1.15);
+
+        const outerEar = new THREE.Mesh(new THREE.ConeGeometry(0.048, 0.22, 12), this.skinMat);
+        outerEar.scale.set(0.85, 1.0, 0.42);
+        earGroup.add(outerEar);
+
+        const innerEar = new THREE.Mesh(new THREE.ConeGeometry(0.032, 0.16, 8), this.earShadowMat);
+        innerEar.position.set(0, -0.02, 0.015);
+        innerEar.scale.set(0.7, 0.9, 0.25);
+        earGroup.add(innerEar);
+
+        const earring = new THREE.Mesh(new THREE.TorusGeometry(0.018, 0.004, 6, 14), this.goldMat);
+        earring.position.set(0, -0.08, 0);
         earring.rotation.x = Math.PI / 2;
-        this.headVisuals.add(earring);
+        earGroup.add(earring);
 
-        // Long face-framing side locks
-        const sideLock = new THREE.Mesh(new THREE.ConeGeometry(0.038, 0.32, 10), this.hairMat);
-        sideLock.position.set(side * 0.18, -0.08, 0.12);
-        sideLock.rotation.set(0.15, 0, side * -0.12);
-        this.headVisuals.add(sideLock);
+        this.headVisuals.add(earGroup);
       }
 
-      // Layered Feathered Bangs
-      const bangL = new THREE.Mesh(new THREE.ConeGeometry(0.055, 0.22, 10), this.hairMat);
-      bangL.position.set(-0.07, 0.12, 0.19);
-      bangL.rotation.set(0.35, 0.15, 0.42);
-      this.headVisuals.add(bangL);
-
-      const bangR = new THREE.Mesh(new THREE.ConeGeometry(0.058, 0.24, 10), this.hairMat);
-      bangR.position.set(0.07, 0.11, 0.19);
-      bangR.rotation.set(0.32, -0.18, -0.48);
-      this.headVisuals.add(bangR);
-
-      // Gold Hair Clasp & 3-Tier Ponytail
-      const clasp = new THREE.Mesh(new THREE.TorusGeometry(0.046, 0.016, 10, 20), this.goldMat);
-      clasp.position.set(0, 0.08, -0.21);
+      // 5. Back Ponytail Clasp & Cascading Locks
+      const clasp = new THREE.Mesh(new THREE.TorusGeometry(0.045, 0.014, 8, 20), this.goldMat);
+      clasp.position.set(0, 0.08, -0.20);
       this.headVisuals.add(clasp);
 
-      const ponyTop = new THREE.Mesh(new THREE.ConeGeometry(0.072, 0.28, 14), this.hairMat);
-      ponyTop.position.set(0, -0.13, 0.02);
+      const ponyTop = new THREE.Mesh(new THREE.ConeGeometry(0.065, 0.26, 12), this.hairMat);
+      ponyTop.position.set(0, -0.12, 0.02);
       ponyTop.rotation.x = -0.32;
       this.hairPonytail.add(ponyTop);
 
-      const ponyMid = new THREE.Mesh(new THREE.ConeGeometry(0.065, 0.32, 12), this.hairMat);
-      ponyMid.position.set(0, -0.32, 0.09);
+      const ponyMid = new THREE.Mesh(new THREE.ConeGeometry(0.055, 0.28, 10), this.hairMat);
+      ponyMid.position.set(0, -0.28, 0.08);
       ponyMid.rotation.x = -0.18;
       this.hairPonytail.add(ponyMid);
 
-      const ponyTip = new THREE.Mesh(new THREE.ConeGeometry(0.045, 0.26, 10), this.hairMat);
-      ponyTip.position.set(0, -0.5, 0.14);
+      const ponyTip = new THREE.Mesh(new THREE.ConeGeometry(0.038, 0.22, 8), this.hairMat);
+      ponyTip.position.set(0, -0.44, 0.12);
       ponyTip.rotation.x = -0.08;
       this.hairPonytail.add(ponyTip);
     }
@@ -1403,68 +1520,189 @@ export class AvatarHero {
       case 'ATTACK_LIGHT':
       case 'ATTACK_HEAVY': {
         const heavy = action === 'ATTACK_HEAVY';
-        const dur = heavy ? 0.6 : 0.42;
-        const p = Math.min(at / dur, 1);
-        // Phases: 0-0.3 wind-up (anticipation), 0.3-0.55 strike (ease-out snap), 0.55-1 follow-through/recover
-        const windUp = p < 0.3 ? Math.sin((p / 0.3) * Math.PI * 0.5) : 1;
-        const strikeRaw = p < 0.3 ? 0 : Math.min((p - 0.3) / 0.25, 1);
-        const strike = 1 - Math.pow(1 - strikeRaw, 3);
-        const recover = p < 0.55 ? 0 : (p - 0.55) / 0.45;
-        const s = windUp * (1 - strike) * (1 - recover * 0.0); // wind-up weight
-        const combo = heavy ? 3 : this.comboIndex;
+        const tool = this.currentEquippedToolType || 'sword';
 
-        if (combo === 0 || combo === 3) {
-          // Horizontal right-to-left slash (heavy = overhead chop)
-          const yawFrom = heavy ? 0 : -1.2;
-          const yawTo = heavy ? 0 : 1.1;
-          const pitchFrom = heavy ? Math.PI * 0.95 : Math.PI / 2.1;
-          const pitchTo = heavy ? 0.25 : Math.PI / 2.4;
-          const k = strike * (1 - recover * 0.35);
+        if (tool === 'axe' || tool === 'pickaxe' || tool === 'hammer') {
+          // ==============================================================
+          // 🪓 REALISTIC TWO-HANDED HEAVY POWER CHOP (Axt, Spitzhacke, Hammer)
+          // ==============================================================
+          const dur = heavy ? 0.68 : 0.52;
+          const p = Math.min(at / dur, 1);
+          // 0 - 0.36: High overhead wind-up & shoulder cock
+          // 0.36 - 0.6: Explosive downward smash & deep knee sink
+          // 0.6 - 1.0: Impact ground recoil & reset
+          const windUp = p < 0.36 ? Math.sin((p / 0.36) * Math.PI * 0.5) : 1;
+          const strikeRaw = p < 0.36 ? 0 : Math.min((p - 0.36) / 0.24, 1);
+          const strike = 1 - Math.pow(1 - strikeRaw, 3);
+          const recover = p < 0.6 ? 0 : (p - 0.6) / 0.4;
+          const k = strike * (1 - recover * 0.4);
+
+          // Torso: Arches back on windup, slams forward on strike, sinks into earth
+          this.torso.rotation.x = THREE.MathUtils.lerp(-0.28 * windUp, 0.48, k);
+          this.torso.rotation.y = THREE.MathUtils.lerp(-0.42 * windUp, 0.15, k);
+          this.torso.rotation.z = THREE.MathUtils.lerp(0.08 * windUp, -0.06, k);
+          this.torso.position.y = 1.35 - strike * (1 - recover) * (heavy ? 0.22 : 0.16);
+
+          // Right Arm (Main chopping arm: high overhead -> downward power slam)
+          const pitchFrom = Math.PI * 0.88;
+          const pitchTo = 0.28;
           this.rightUpperArm.rotation.set(
             THREE.MathUtils.lerp(pitchFrom * windUp, pitchTo, k),
-            THREE.MathUtils.lerp(yawFrom * windUp, yawTo, k),
-            heavy ? 0 : 0.25
+            THREE.MathUtils.lerp(-0.25 * windUp, 0.05, k),
+            THREE.MathUtils.lerp(0.3 * windUp, 0.1, k)
           );
-          this.torso.rotation.y = THREE.MathUtils.lerp(-0.6 * windUp, heavy ? 0 : 0.7, k);
-          this.torso.rotation.x = heavy ? THREE.MathUtils.lerp(-0.2 * windUp, 0.45, k) : 0.12;
-        } else if (combo === 1) {
-          // Rising diagonal backhand
-          const k = strike * (1 - recover * 0.35);
-          this.rightUpperArm.rotation.set(THREE.MathUtils.lerp(0.3 * windUp, Math.PI * 0.8, k), THREE.MathUtils.lerp(1.0 * windUp, -0.9, k), 0.3);
-          this.torso.rotation.y = THREE.MathUtils.lerp(0.6 * windUp, -0.6, k);
-          this.torso.rotation.x = 0.08;
-        } else {
-          // Forward thrust
-          const k = strike * (1 - recover * 0.5);
-          this.rightUpperArm.rotation.set(Math.PI / 2, THREE.MathUtils.lerp(0.4 * windUp, 0, k), 0);
-          this.rightLowerArm.rotation.set(THREE.MathUtils.lerp(-1.4 * windUp, 0, k), 0, 0);
-          this.torso.rotation.y = THREE.MathUtils.lerp(-0.5 * windUp, 0.2, k);
-          this.torso.rotation.x = THREE.MathUtils.lerp(0, 0.3, k);
-        }
-        if (combo !== 2) this.rightLowerArm.rotation.set(-0.15 - s * 0.6, 0, 0);
+          this.rightLowerArm.rotation.set(
+            THREE.MathUtils.lerp(-1.1 * windUp, -0.15, k),
+            0,
+            0
+          );
 
-        // Shield arm guards in front, counterbalancing the swing
-        this.leftUpperArm.rotation.set(0.9 + s * 0.2, 0.4, -0.35);
-        this.leftLowerArm.rotation.set(-1.1, 0, 0);
-        this.torso.rotation.z = -this.torso.rotation.y * 0.12;
-        this.head.rotation.y = -this.torso.rotation.y * 0.6; // eyes stay on target
-        this.hairPonytail.rotation.set(0.4, 0, -this.torso.rotation.y * 0.8);
+          // Left Arm (Assisting two-handed grip on the handle)
+          this.leftUpperArm.rotation.set(
+            THREE.MathUtils.lerp(1.75 * windUp, 0.35, k),
+            THREE.MathUtils.lerp(0.55 * windUp, 0.28, k),
+            THREE.MathUtils.lerp(-0.35 * windUp, -0.22, k)
+          );
+          this.leftLowerArm.rotation.set(
+            THREE.MathUtils.lerp(-1.35 * windUp, -0.3, k),
+            0,
+            0
+          );
 
-        if (isMoving) {
-          const gait = Math.sin(t);
-          this.leftUpperLeg.rotation.x = gait * 0.7;
-          this.leftLowerLeg.rotation.x = gait < 0 ? Math.sin(-gait * Math.PI) * 0.8 : 0.05;
-          this.rightUpperLeg.rotation.x = -gait * 0.7;
-          this.rightLowerLeg.rotation.x = gait > 0 ? Math.sin(gait * Math.PI) * 0.8 : 0.05;
-          this.torso.position.y = 1.33 + Math.abs(Math.sin(t * 2)) * 0.05;
+          // Head looks at impact target on ground
+          this.head.rotation.x = THREE.MathUtils.lerp(-0.2 * windUp, 0.32, k);
+          this.head.rotation.y = -this.torso.rotation.y * 0.7;
+          this.hairPonytail.rotation.set(0.35 + windUp * 0.4 - strike * 0.6, 0, -this.torso.rotation.y * 0.8);
+
+          // Stance: Deep rooted power stance
+          if (isMoving) {
+            const gait = Math.sin(t);
+            this.leftUpperLeg.rotation.x = gait * 0.6;
+            this.leftLowerLeg.rotation.x = gait < 0 ? Math.sin(-gait * Math.PI) * 0.7 : 0.05;
+            this.rightUpperLeg.rotation.x = -gait * 0.6;
+            this.rightLowerLeg.rotation.x = gait > 0 ? Math.sin(gait * Math.PI) * 0.7 : 0.05;
+          } else {
+            const sink = strike * (1 - recover);
+            this.leftUpperLeg.rotation.set(0.35 + sink * 0.4, 0, -0.15);
+            this.leftLowerLeg.rotation.x = 0.45 + sink * 0.35;
+            this.rightUpperLeg.rotation.set(-0.2 - sink * 0.2, 0, 0.15);
+            this.rightLowerLeg.rotation.x = 0.3 + sink * 0.25;
+          }
+
+        } else if (tool === 'shovel') {
+          // ==============================================================
+          // ⛏️ REALISTIC SHOVEL DIG & SCOOP (Schaufel)
+          // ==============================================================
+          const dur = 0.54;
+          const p = Math.min(at / dur, 1);
+          // Phase 1 (0-0.35): Drive blade down into soil
+          // Phase 2 (0.35-0.7): Lever up heavy earth
+          // Phase 3 (0.7-1.0): Toss & return
+          if (p < 0.35) {
+            const dig = Math.sin((p / 0.35) * Math.PI * 0.5);
+            this.torso.rotation.set(0.42 * dig, 0.1 * dig, 0);
+            this.torso.position.y = 1.35 - 0.14 * dig;
+            this.rightUpperArm.rotation.set(0.85 * dig, 0, 0.18);
+            this.rightLowerArm.rotation.set(-0.6 * dig, 0, 0);
+            this.leftUpperArm.rotation.set(1.15 * dig, 0.25, -0.28);
+            this.leftLowerArm.rotation.set(-0.9 * dig, 0, 0);
+          } else if (p < 0.7) {
+            const lift = (p - 0.35) / 0.35;
+            this.torso.rotation.set(0.42 - 0.55 * lift, 0.1 - 0.25 * lift, 0);
+            this.torso.position.y = 1.21 + 0.16 * lift;
+            this.rightUpperArm.rotation.set(0.85 + 0.65 * lift, 0.2 * lift, 0.15);
+            this.rightLowerArm.rotation.set(-0.6 + 0.3 * lift, 0, 0);
+            this.leftUpperArm.rotation.set(1.15 - 0.4 * lift, 0.2, -0.2);
+          } else {
+            const ret = (p - 0.7) / 0.3;
+            this.torso.rotation.set(-0.13 * (1 - ret), -0.15 * (1 - ret), 0);
+            this.rightUpperArm.rotation.set(1.5 * (1 - ret), 0, 0);
+          }
+          this.leftUpperLeg.rotation.set(0.3, 0, -0.1);
+          this.leftLowerLeg.rotation.x = 0.35;
+          this.rightUpperLeg.rotation.set(-0.15, 0, 0.1);
+
         } else {
-          // Lunge: step in on strike, sink weight
-          const lunge = strike * (1 - recover);
-          this.leftUpperLeg.rotation.set(0.25 + lunge * 0.45, 0, -0.1);
-          this.leftLowerLeg.rotation.x = 0.3 + lunge * 0.35;
-          this.rightUpperLeg.rotation.set(-0.25 - lunge * 0.25, 0, 0.1);
-          this.rightLowerLeg.rotation.x = 0.15 + lunge * 0.2;
-          this.torso.position.y = 1.35 - lunge * (heavy ? 0.14 : 0.08);
+          // ==============================================================
+          // ⚔️ DYNAMIC ANIME SWORD COMBOS (1-2-3 Combo & Heavy Spin)
+          // ==============================================================
+          const dur = heavy ? 0.62 : 0.42;
+          const p = Math.min(at / dur, 1);
+          const windUp = p < 0.28 ? Math.sin((p / 0.28) * Math.PI * 0.5) : 1;
+          const strikeRaw = p < 0.28 ? 0 : Math.min((p - 0.28) / 0.26, 1);
+          const strike = 1 - Math.pow(1 - strikeRaw, 3);
+          const recover = p < 0.54 ? 0 : (p - 0.54) / 0.46;
+          const s = windUp * (1 - strike);
+          const combo = heavy ? 3 : this.comboIndex;
+
+          if (combo === 0) {
+            // Hit 1: Horizontal right-to-left clean slash with hip rotation
+            const k = strike * (1 - recover * 0.3);
+            this.rightUpperArm.rotation.set(
+              THREE.MathUtils.lerp(Math.PI / 2.2 * windUp, Math.PI / 2.3, k),
+              THREE.MathUtils.lerp(-1.35 * windUp, 1.25, k),
+              0.22
+            );
+            this.rightLowerArm.rotation.set(-0.15 - s * 0.5, 0, 0);
+            this.torso.rotation.y = THREE.MathUtils.lerp(-0.72 * windUp, 0.75, k);
+            this.torso.rotation.x = 0.12;
+            this.leftUpperArm.rotation.set(0.85, 0.35, -0.35);
+            this.leftLowerArm.rotation.set(-1.1, 0, 0);
+
+          } else if (combo === 1) {
+            // Hit 2: Dynamic rising diagonal uppercut slash
+            const k = strike * (1 - recover * 0.35);
+            this.rightUpperArm.rotation.set(
+              THREE.MathUtils.lerp(0.25 * windUp, Math.PI * 0.82, k),
+              THREE.MathUtils.lerp(1.15 * windUp, -0.95, k),
+              0.32
+            );
+            this.rightLowerArm.rotation.set(-0.2 - s * 0.4, 0, 0);
+            this.torso.rotation.y = THREE.MathUtils.lerp(0.68 * windUp, -0.65, k);
+            this.torso.rotation.x = 0.08;
+            this.leftUpperArm.rotation.set(0.7, 0.4, -0.3);
+            this.leftLowerArm.rotation.set(-1.0, 0, 0);
+
+          } else if (combo === 2) {
+            // Hit 3: Lunging forward pierce / thrust
+            const k = strike * (1 - recover * 0.45);
+            this.rightUpperArm.rotation.set(Math.PI / 2, THREE.MathUtils.lerp(0.45 * windUp, 0, k), 0);
+            this.rightLowerArm.rotation.set(THREE.MathUtils.lerp(-1.5 * windUp, 0.02, k), 0, 0);
+            this.torso.rotation.y = THREE.MathUtils.lerp(-0.55 * windUp, 0.18, k);
+            this.torso.rotation.x = THREE.MathUtils.lerp(0.05, 0.35, k);
+            this.leftUpperArm.rotation.set(1.0, 0.4, -0.38);
+            this.leftLowerArm.rotation.set(-1.2, 0, 0);
+
+          } else {
+            // Heavy: 360 Spin Cleave / Helm Splitter
+            const spin = p * Math.PI * 2;
+            this.torso.rotation.y = spin;
+            this.torso.rotation.x = 0.2;
+            this.rightUpperArm.rotation.set(Math.PI / 2.2, 0, 0.3);
+            this.rightLowerArm.rotation.set(-0.1, 0, 0);
+            this.leftUpperArm.rotation.set(Math.PI / 2.2, 0, -0.3);
+            this.leftLowerArm.rotation.set(-0.1, 0, 0);
+            this.torso.position.y = 1.35 + Math.sin(p * Math.PI) * 0.25; // airborne hop
+          }
+
+          this.head.rotation.y = -this.torso.rotation.y * 0.6; // Eyes stay locked on enemy
+          this.hairPonytail.rotation.set(0.4, 0, -this.torso.rotation.y * 0.8);
+
+          if (isMoving) {
+            const gait = Math.sin(t);
+            this.leftUpperLeg.rotation.x = gait * 0.7;
+            this.leftLowerLeg.rotation.x = gait < 0 ? Math.sin(-gait * Math.PI) * 0.8 : 0.05;
+            this.rightUpperLeg.rotation.x = -gait * 0.7;
+            this.rightLowerLeg.rotation.x = gait > 0 ? Math.sin(gait * Math.PI) * 0.8 : 0.05;
+            this.torso.position.y = 1.33 + Math.abs(Math.sin(t * 2)) * 0.05;
+          } else {
+            const lunge = strike * (1 - recover);
+            this.leftUpperLeg.rotation.set(0.28 + lunge * 0.48, 0, -0.1);
+            this.leftLowerLeg.rotation.x = 0.32 + lunge * 0.36;
+            this.rightUpperLeg.rotation.set(-0.25 - lunge * 0.25, 0, 0.1);
+            this.rightLowerLeg.rotation.x = 0.18 + lunge * 0.2;
+            this.torso.position.y = 1.35 - lunge * (heavy ? 0.14 : 0.08);
+          }
         }
         break;
       }
@@ -1634,7 +1872,10 @@ export class AvatarHero {
       this.sword.remove(this.sword.children[0]);
     }
 
-    if (!item) return; // Un-equipped / empty hand
+    if (!item) {
+      this.currentEquippedToolType = 'unarmed';
+      return; // Un-equipped / empty hand
+    }
 
     const woodMat = new THREE.MeshStandardMaterial({ color: 0x5c3d1e, roughness: 0.75 });
     const darkWoodMat = new THREE.MeshStandardMaterial({ color: 0x3d2817, roughness: 0.8 });
@@ -1654,6 +1895,7 @@ export class AvatarHero {
     // 1. AUTHENTIC BEARDED WOODCUTTER'S AXE (Bartaxt)
     // -------------------------------------------------------------
     if (toolType === 'axe' || itemName.includes('axt') || itemName.includes('axe')) {
+      this.currentEquippedToolType = 'axe';
       const isWood = itemId.includes('wood') || itemName.includes('holz');
       const isStone = itemId.includes('stone') || itemName.includes('stein');
 
@@ -1727,6 +1969,7 @@ export class AvatarHero {
     // 2. AUTHENTIC MINER'S PICKAXE (Spitzhacke)
     // -------------------------------------------------------------
     } else if (toolType === 'pickaxe' || itemName.includes('spitzhacke') || itemName.includes('pickaxe')) {
+      this.currentEquippedToolType = 'pickaxe';
       const pickGroup = new THREE.Group();
 
       // Hickory Shaft
@@ -1770,6 +2013,7 @@ export class AvatarHero {
     // 3. AUTHENTIC D-GRIP SPADE / SHOVEL (Schaufel)
     // -------------------------------------------------------------
     } else if (toolType === 'shovel' || itemName.includes('schaufel') || itemName.includes('shovel')) {
+      this.currentEquippedToolType = 'shovel';
       const shovelGroup = new THREE.Group();
 
       // Ashwood Shaft
@@ -1814,6 +2058,7 @@ export class AvatarHero {
     // 4. FORGED WAR HAMMER / MALLET (Bau- & Kriegshammer)
     // -------------------------------------------------------------
     } else if (toolType === 'hammer' || itemName.includes('hammer')) {
+      this.currentEquippedToolType = 'hammer';
       const hammerGroup = new THREE.Group();
 
       const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.032, 0.034, 1.2, 10), darkWoodMat);
@@ -1844,6 +2089,7 @@ export class AvatarHero {
     // 5. PRISMATIC GLOWING CRYSTAL BLADE (Kristallklinge)
     // -------------------------------------------------------------
     } else if (itemId.includes('crystal') || itemName.includes('kristall')) {
+      this.currentEquippedToolType = 'sword';
       const crystalGroup = new THREE.Group();
 
       const crystalBladeMat = new THREE.MeshStandardMaterial({
@@ -1896,6 +2142,7 @@ export class AvatarHero {
     // 6. BURNING TORCH (Fackel)
     // -------------------------------------------------------------
     } else if (itemId.includes('torch') || itemName.includes('fackel')) {
+      this.currentEquippedToolType = 'torch';
       const torchGroup = new THREE.Group();
 
       const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.035, 1.0, 8), woodMat);
@@ -1926,6 +2173,7 @@ export class AvatarHero {
     // 7. COMPOSITE RECURVE BOW (Bogen)
     // -------------------------------------------------------------
     } else if (item.type === 'bow' || itemName.includes('bogen') || itemName.includes('bow')) {
+      this.currentEquippedToolType = 'bow';
       const bowGroup = new THREE.Group();
 
       const bowCore = new THREE.Mesh(new THREE.TorusGeometry(0.55, 0.028, 8, 20, Math.PI * 0.85), darkWoodMat);
@@ -1945,6 +2193,7 @@ export class AvatarHero {
     // 8. ICONIC MASTER SWORD OF RESURRECTION (Default)
     // -------------------------------------------------------------
     } else {
+      this.currentEquippedToolType = 'sword';
       const masterBladeMat = new THREE.MeshStandardMaterial({
         color: 0xf1f5f9,
         metalness: 0.95,
