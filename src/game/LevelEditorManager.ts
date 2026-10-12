@@ -1474,4 +1474,92 @@ export class LevelEditorManager {
     // For default procedural world with deltas or initial boot:
     this.syncEntireWorldToTerrain();
   }
+
+  /**
+   * Complete, clean world reset to pristine default state:
+   * 1. Resets terrain heights & vertex colors to default procedural state
+   * 2. Clears and removes all player-built structures, roads, tracks, walls, towers, obstacles
+   * 3. Clears and removes all level-editor placed objects & preview paths
+   * 4. Cleans all local storage saves (HYRULE_BUILT_STRUCTURES, HYRULE_TERRAIN_DELTAS, HYRULE_ACTIVE_TEMPLATE, HYRULE_ACTIVE_WORLD_NAME)
+   * 5. Repopulates foliage and wildflowers to default ground heights
+   * 6. Notifies physics engine that obstacles changed
+   */
+  public resetWorldToDefault() {
+    // 1. Reset terrain heights and colors
+    this.terrainManager.resetToOriginalProceduralTerrain();
+
+    // 2. Remove and dispose all meshes from buildingSystem.group
+    while (this.buildingSystem.group.children.length > 0) {
+      const child = this.buildingSystem.group.children[0];
+      this.buildingSystem.group.remove(child);
+      child.traverse((node) => {
+        if ((node as THREE.Mesh).geometry) {
+          (node as THREE.Mesh).geometry.dispose();
+        }
+        if ((node as THREE.Mesh).material) {
+          const mat = (node as THREE.Mesh).material;
+          if (Array.isArray(mat)) {
+            mat.forEach((m) => m.dispose());
+          } else {
+            mat.dispose();
+          }
+        }
+      });
+    }
+
+    // Reset building system lists
+    this.buildingSystem.structures = [];
+    this.buildingSystem.obstacles = [];
+    this.buildingSystem.catanRoadSegments = [];
+    this.buildingSystem.roadSplines = [];
+    this.buildingSystem.nextStructureId = 1;
+
+    // 3. Remove and dispose all meshes from editorGroup
+    while (this.editorGroup.children.length > 0) {
+      const child = this.editorGroup.children[0];
+      this.editorGroup.remove(child);
+      child.traverse((node) => {
+        if ((node as THREE.Mesh).geometry) {
+          (node as THREE.Mesh).geometry.dispose();
+        }
+        if ((node as THREE.Mesh).material) {
+          const mat = (node as THREE.Mesh).material;
+          if (Array.isArray(mat)) {
+            mat.forEach((m) => m.dispose());
+          } else {
+            mat.dispose();
+          }
+        }
+      });
+    }
+
+    // Reset editor placed objects and road planner
+    this.placedObjects = [];
+    this.roadPlannerPoints = [];
+    this.lastBuiltRoadSegmentIds = [];
+
+    // Clear road preview group
+    while (this.roadPreviewGroup.children.length > 0) {
+      const child = this.roadPreviewGroup.children[0];
+      this.roadPreviewGroup.remove(child);
+    }
+    this.onRoadPathUpdated?.({ pointCount: 0, lengthMeters: 0, estimatedSegments: 0 });
+
+    // 4. Remove localStorage persistent items
+    try {
+      localStorage.removeItem('HYRULE_BUILT_STRUCTURES');
+      localStorage.removeItem('HYRULE_TERRAIN_DELTAS');
+      localStorage.removeItem('HYRULE_ACTIVE_TEMPLATE');
+      localStorage.removeItem('HYRULE_ACTIVE_WORLD_NAME');
+    } catch (e) {
+      console.warn('Could not clear localStorage during world reset:', e);
+    }
+
+    // 5. Atomic sync of world, repopulate flowers & grass
+    this.syncEntireWorldToTerrain();
+
+    // 6. Notify physics & audio
+    this.onObstaclesChanged?.();
+    audioEngine.playShrineFanfare();
+  }
 }

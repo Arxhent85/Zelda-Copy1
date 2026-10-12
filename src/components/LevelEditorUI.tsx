@@ -969,6 +969,25 @@ export const LevelEditorUI: React.FC<LevelEditorUIProps> = ({
                       ))}
                     </div>
                   )}
+
+                  {/* Complete World Reset to Default (Standartmodus) */}
+                  <div className="border-t border-red-500/30 pt-2.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 bg-red-950/20 p-2.5 rounded-xl border border-red-500/20">
+                    <div className="flex flex-col">
+                      <span className="text-xs font-bold text-red-200">🔄 Welt komplett auf Standard-Zustand zurücksetzen</span>
+                      <span className="text-[10px] text-slate-400">Löscht alle Straßen, Rennstrecken, Gebäude, Objekte und Gelände-Verformungen</span>
+                    </div>
+                    <button
+                      onClick={() => {
+                        if (window.confirm('Möchtest du wirklich die gesamte Welt auf den Standard-Zustand zurücksetzen? Alle Straßen, Bauten und Gelände-Änderungen werden unwiderruflich gelöscht.')) {
+                          engine.resetWorldToDefault();
+                          onToast('✨ Welt komplett auf Standard-Zustand zurückgesetzt!');
+                        }
+                      }}
+                      className="w-full sm:w-auto flex items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-red-700 to-rose-600 hover:from-red-600 hover:to-rose-500 px-3.5 py-1.5 text-xs font-bold text-white shadow-md active:scale-95 transition border border-red-400/40"
+                    >
+                      <RotateCcw className="h-3.5 w-3.5" /> Standard-Welt laden
+                    </button>
+                  </div>
                 </div>
               )}
 

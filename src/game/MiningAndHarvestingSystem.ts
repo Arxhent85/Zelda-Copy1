@@ -334,57 +334,74 @@ export class MiningAndHarvestingSystem {
   public createTreeNode(x: number, y: number, z: number, isOak: boolean = true): THREE.Group {
     const nodeGroup = new THREE.Group();
 
-    // Wooden Trunk with flared root base
+    // High-Detail Wooden Trunk with flared root base
     const trunkMat = new THREE.MeshStandardMaterial({ color: isOak ? 0x543618 : 0x382310, roughness: 0.88 });
-    const trunkGeo = new THREE.CylinderGeometry(0.34, 0.68, 4.6, 10);
+    const mossBaseMat = new THREE.MeshStandardMaterial({ color: 0x2e5927, roughness: 0.92 });
+    const trunkGeo = new THREE.CylinderGeometry(0.36, 0.72, 4.8, 16);
     const trunk = new THREE.Mesh(trunkGeo, trunkMat);
-    trunk.position.y = 2.3;
+    trunk.position.y = 2.4;
     trunk.castShadow = true;
     trunk.receiveShadow = true;
     nodeGroup.add(trunk);
 
-    // Root buttresses spreading into terrain
-    for (let r = 0; r < 3; r++) {
-      const rootAngle = (r / 3) * Math.PI * 2 + 0.4;
-      const rootGeo = new THREE.ConeGeometry(0.24, 1.2, 5);
+    // Moss collar at base of trunk
+    const mossCollar = new THREE.Mesh(new THREE.CylinderGeometry(0.68, 0.76, 0.38, 16), mossBaseMat);
+    mossCollar.position.y = 0.2;
+    mossCollar.castShadow = true;
+    nodeGroup.add(mossCollar);
+
+    // Root buttresses spreading organically into terrain
+    for (let r = 0; r < 4; r++) {
+      const rootAngle = (r / 4) * Math.PI * 2 + 0.35;
+      const rootGeo = new THREE.ConeGeometry(0.26, 1.4, 8);
       const root = new THREE.Mesh(rootGeo, trunkMat);
-      root.position.set(Math.cos(rootAngle) * 0.52, 0.45, Math.sin(rootAngle) * 0.52);
-      root.rotation.x = Math.sin(rootAngle) * 0.45;
-      root.rotation.z = -Math.cos(rootAngle) * 0.45;
+      root.position.set(Math.cos(rootAngle) * 0.58, 0.5, Math.sin(rootAngle) * 0.58);
+      root.rotation.x = Math.sin(rootAngle) * 0.48;
+      root.rotation.z = -Math.cos(rootAngle) * 0.48;
       root.castShadow = true;
       nodeGroup.add(root);
     }
 
     // Branch Forks & Foliage Canopies
     if (isOak) {
-      const b1 = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.28, 2.0, 6), trunkMat);
-      b1.position.set(0.45, 3.9, 0.25);
-      b1.rotation.z = -Math.PI / 4.8;
+      // 3 Heavy architectural branches
+      const b1 = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.28, 2.2, 8), trunkMat);
+      b1.position.set(0.48, 4.0, 0.28);
+      b1.rotation.z = -Math.PI / 4.6;
       b1.castShadow = true;
       nodeGroup.add(b1);
 
-      const b2 = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.24, 1.8, 6), trunkMat);
-      b2.position.set(-0.4, 4.1, -0.25);
-      b2.rotation.z = Math.PI / 4.5;
+      const b2 = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.26, 2.0, 8), trunkMat);
+      b2.position.set(-0.46, 4.2, -0.28);
+      b2.rotation.z = Math.PI / 4.4;
       b2.castShadow = true;
       nodeGroup.add(b2);
 
-      // Lush BotW Stylized Organic Leaf Clumps (Subdivided Icosahedrons for soft painterly shading)
-      const greens = [0x275922, 0x1d4719, 0x33742d, 0x245e1f, 0x3d8635];
+      const b3 = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.24, 1.8, 8), trunkMat);
+      b3.position.set(0.1, 4.3, -0.45);
+      b3.rotation.x = Math.PI / 4.8;
+      b3.castShadow = true;
+      nodeGroup.add(b3);
+
+      // Lush BotW Stylized Organic Leaf Clumps (High-Poly Subdivided Icosahedrons)
+      const greens = [0x275922, 0x1d4719, 0x33742d, 0x245e1f, 0x3d8635, 0x47943f];
       const clusterOffsets = [
-        { x: 0, y: 5.6, z: 0, r: 2.5, c: greens[0], sy: 0.92 },
-        { x: 1.2, y: 5.3, z: 0.8, r: 1.9, c: greens[1], sy: 0.88 },
-        { x: -1.1, y: 5.5, z: -0.7, r: 2.0, c: greens[2], sy: 0.88 },
-        { x: 0.8, y: 6.4, z: -0.9, r: 1.8, c: greens[3], sy: 0.90 },
-        { x: -0.85, y: 6.3, z: 0.9, r: 1.9, c: greens[4], sy: 0.88 },
-        { x: 0, y: 7.0, z: 0, r: 1.7, c: greens[2], sy: 0.94 },
+        { x: 0, y: 5.7, z: 0, r: 2.6, c: greens[0], sy: 0.92 },
+        { x: 1.3, y: 5.4, z: 0.85, r: 2.0, c: greens[1], sy: 0.88 },
+        { x: -1.2, y: 5.6, z: -0.75, r: 2.1, c: greens[2], sy: 0.88 },
+        { x: 0.85, y: 6.5, z: -0.95, r: 1.9, c: greens[3], sy: 0.90 },
+        { x: -0.9, y: 6.4, z: 0.95, r: 2.0, c: greens[4], sy: 0.88 },
+        { x: 0.1, y: 7.2, z: 0.1, r: 1.8, c: greens[5], sy: 0.94 },
+        { x: 1.1, y: 6.3, z: 0.7, r: 1.6, c: greens[2], sy: 0.88 },
+        { x: -0.6, y: 5.1, z: 1.4, r: 1.7, c: greens[1], sy: 0.86 },
+        { x: 0.7, y: 5.2, z: -1.3, r: 1.7, c: greens[3], sy: 0.86 },
       ];
 
       clusterOffsets.forEach((cl) => {
         const mat = new THREE.MeshStandardMaterial({
           color: cl.c,
-          roughness: 0.65,
-          metalness: 0.05,
+          roughness: 0.62,
+          metalness: 0.03,
           flatShading: false,
         });
         const crown = new THREE.Mesh(new THREE.IcosahedronGeometry(cl.r, 2), mat);
@@ -395,24 +412,25 @@ export class MiningAndHarvestingSystem {
         nodeGroup.add(crown);
       });
     } else {
-      // Alpine Pine Canopy Tiers with optional summit snow frosting
+      // Alpine Pine 5-Tier Canopy with High-Poly Branch Rings & summit snow frosting
       const isMountainSnowZone = y > 22.0;
-      const pineGreens = [0x133824, 0x1a462e, 0x0c2518, 0x22583b];
+      const pineGreens = [0x133824, 0x1a462e, 0x0c2518, 0x22583b, 0x2e6d4c];
       const snowWhite = 0xf0f7ff;
       const tiers = [
-        { y: 4.8, r: 3.0, h: 3.8, c: pineGreens[0] },
-        { y: 6.5, r: 2.4, h: 3.2, c: pineGreens[1] },
-        { y: 8.0, r: 1.7, h: 2.6, c: isMountainSnowZone ? snowWhite : pineGreens[2] },
-        { y: 9.3, r: 1.1, h: 2.0, c: isMountainSnowZone ? snowWhite : pineGreens[3] },
+        { y: 4.6, r: 3.2, h: 3.6, c: pineGreens[0] },
+        { y: 6.2, r: 2.6, h: 3.1, c: pineGreens[1] },
+        { y: 7.6, r: 2.0, h: 2.7, c: pineGreens[2] },
+        { y: 8.8, r: 1.5, h: 2.3, c: isMountainSnowZone ? snowWhite : pineGreens[3] },
+        { y: 9.8, r: 1.0, h: 1.9, c: isMountainSnowZone ? snowWhite : pineGreens[4] },
       ];
 
       tiers.forEach((t) => {
         const mat = new THREE.MeshStandardMaterial({
           color: t.c,
-          roughness: 0.72,
-          metalness: 0.05,
+          roughness: 0.68,
+          metalness: 0.04,
         });
-        const cone = new THREE.Mesh(new THREE.ConeGeometry(t.r, t.h, 9), mat);
+        const cone = new THREE.Mesh(new THREE.ConeGeometry(t.r, t.h, 16), mat);
         cone.position.y = t.y;
         cone.castShadow = true;
         cone.receiveShadow = true;
@@ -452,30 +470,31 @@ export class MiningAndHarvestingSystem {
   public createOreNode(x: number, y: number, z: number, config: any): THREE.Group {
     const nodeGroup = new THREE.Group();
 
-    // Dark slate rock matrix base
+    // Dark slate rock matrix base with natural facets
     const baseMat = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.85 });
-    const baseMesh = new THREE.Mesh(new THREE.DodecahedronGeometry(1.2, 1), baseMat);
-    baseMesh.scale.set(1.2, 0.8, 1.2);
+    const baseMesh = new THREE.Mesh(new THREE.IcosahedronGeometry(1.25, 2), baseMat);
+    baseMesh.scale.set(1.2, 0.75, 1.2);
     baseMesh.castShadow = true;
+    baseMesh.receiveShadow = true;
     nodeGroup.add(baseMesh);
 
-    // Vein / Crystal spikes
+    // Vein / Crystal spikes with sharp specular reflections and glowing facets
     const veinMat = new THREE.MeshStandardMaterial({
       color: config.color,
-      roughness: 0.2,
-      metalness: 0.9,
-      emissive: config.type === 'ore_crystal' ? config.color : 0x000000,
-      emissiveIntensity: config.type === 'ore_crystal' ? 0.8 : 0,
+      roughness: 0.15,
+      metalness: 0.95,
+      emissive: config.type === 'ore_crystal' ? config.color : 0x111111,
+      emissiveIntensity: config.type === 'ore_crystal' ? 0.9 : 0.15,
     });
 
-    for (let j = 0; j < 5; j++) {
-      const spike = new THREE.Mesh(new THREE.ConeGeometry(0.35, 1.1, 5), veinMat);
+    for (let j = 0; j < 7; j++) {
+      const spike = new THREE.Mesh(new THREE.ConeGeometry(0.28, 1.15, 6), veinMat);
       spike.position.set(
-        (Math.random() - 0.5) * 0.9,
-        0.4 + Math.random() * 0.5,
-        (Math.random() - 0.5) * 0.9
+        (Math.random() - 0.5) * 1.0,
+        0.35 + Math.random() * 0.55,
+        (Math.random() - 0.5) * 1.0
       );
-      spike.rotation.set(Math.random() * 0.5, Math.random() * Math.PI, Math.random() * 0.5);
+      spike.rotation.set(Math.random() * 0.6, Math.random() * Math.PI, Math.random() * 0.6);
       spike.castShadow = true;
       nodeGroup.add(spike);
     }
@@ -510,12 +529,21 @@ export class MiningAndHarvestingSystem {
 
   public createRockNode(x: number, y: number, z: number): THREE.Group {
     const nodeGroup = new THREE.Group();
-    const rockMat = new THREE.MeshStandardMaterial({ color: 0x64748b, roughness: 0.82 });
+    const rockMat = new THREE.MeshStandardMaterial({ color: 0x64748b, roughness: 0.80 });
+    const mossCapMat = new THREE.MeshStandardMaterial({ color: 0x2e5e29, roughness: 0.88 });
 
-    const mesh = new THREE.Mesh(new THREE.DodecahedronGeometry(1.1, 1), rockMat);
-    mesh.scale.set(1.1, 0.75, 1.1);
+    // Weathered high-poly rock boulder
+    const mesh = new THREE.Mesh(new THREE.IcosahedronGeometry(1.2, 2), rockMat);
+    mesh.scale.set(1.15, 0.8, 1.25);
     mesh.castShadow = true;
+    mesh.receiveShadow = true;
     nodeGroup.add(mesh);
+
+    // Natural moss crest on the top surface
+    const mossCap = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.85, 0.18, 12), mossCapMat);
+    mossCap.position.y = 0.72;
+    mossCap.castShadow = true;
+    nodeGroup.add(mossCap);
 
     nodeGroup.position.set(x, y, z);
     this.group.add(nodeGroup);
@@ -547,44 +575,52 @@ export class MiningAndHarvestingSystem {
 
   public createSakuraTree(x: number, y: number, z: number): THREE.Group {
     const nodeGroup = new THREE.Group();
-    const trunkMat = new THREE.MeshStandardMaterial({ color: 0x3d2817, roughness: 0.9 });
-    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.36, 0.65, 4.8, 8), trunkMat);
-    trunk.position.y = 2.4;
-    trunk.rotation.z = (Math.random() - 0.5) * 0.15;
+    const trunkMat = new THREE.MeshStandardMaterial({ color: 0x3d2817, roughness: 0.88 });
+    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.36, 0.68, 5.0, 14), trunkMat);
+    trunk.position.y = 2.5;
+    trunk.rotation.z = (Math.random() - 0.5) * 0.18;
     trunk.castShadow = true;
+    trunk.receiveShadow = true;
     nodeGroup.add(trunk);
 
     for (const side of [-1, 1]) {
-      const b = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.28, 2.2, 6), trunkMat);
-      b.position.set(side * 0.5, 4.2, 0);
-      b.rotation.z = side * -0.55;
+      const b = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.28, 2.4, 8), trunkMat);
+      b.position.set(side * 0.52, 4.3, 0);
+      b.rotation.z = side * -0.58;
       b.castShadow = true;
       nodeGroup.add(b);
     }
 
-    const pinkPinks = [0xf472b6, 0xfbcfe8, 0xf9a8d4];
-    const blossomGeo = new THREE.DodecahedronGeometry(1.6, 1);
-    const blossomMat1 = new THREE.MeshStandardMaterial({ color: pinkPinks[0], roughness: 0.65 });
-    const blossomMat2 = new THREE.MeshStandardMaterial({ color: pinkPinks[1], roughness: 0.65 });
-    const blossomMat3 = new THREE.MeshStandardMaterial({ color: pinkPinks[2], roughness: 0.65 });
+    const bFront = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.24, 2.0, 8), trunkMat);
+    bFront.position.set(0, 4.4, 0.5);
+    bFront.rotation.x = 0.55;
+    bFront.castShadow = true;
+    nodeGroup.add(bFront);
 
-    const cl1 = new THREE.Mesh(blossomGeo, blossomMat1);
-    cl1.position.set(0, 5.8, 0);
+    const pinkPinks = [0xf472b6, 0xfbcfe8, 0xf9a8d4, 0xf43f5e];
+    const cl1 = new THREE.Mesh(new THREE.IcosahedronGeometry(1.8, 2), new THREE.MeshStandardMaterial({ color: pinkPinks[0], roughness: 0.65 }));
+    cl1.position.set(0, 6.0, 0);
     cl1.scale.set(1.4, 1.1, 1.4);
     cl1.castShadow = true;
     nodeGroup.add(cl1);
 
-    const cl2 = new THREE.Mesh(blossomGeo, blossomMat2);
-    cl2.position.set(1.4, 5.4, 0.8);
-    cl2.scale.set(1.1, 0.9, 1.1);
+    const cl2 = new THREE.Mesh(new THREE.IcosahedronGeometry(1.5, 2), new THREE.MeshStandardMaterial({ color: pinkPinks[1], roughness: 0.65 }));
+    cl2.position.set(1.5, 5.5, 0.9);
+    cl2.scale.set(1.15, 0.92, 1.15);
     cl2.castShadow = true;
     nodeGroup.add(cl2);
 
-    const cl3 = new THREE.Mesh(blossomGeo, blossomMat3);
-    cl3.position.set(-1.3, 5.6, -0.7);
+    const cl3 = new THREE.Mesh(new THREE.IcosahedronGeometry(1.5, 2), new THREE.MeshStandardMaterial({ color: pinkPinks[2], roughness: 0.65 }));
+    cl3.position.set(-1.4, 5.7, -0.8);
     cl3.scale.set(1.2, 0.95, 1.2);
     cl3.castShadow = true;
     nodeGroup.add(cl3);
+
+    const cl4 = new THREE.Mesh(new THREE.IcosahedronGeometry(1.3, 2), new THREE.MeshStandardMaterial({ color: pinkPinks[3], roughness: 0.65 }));
+    cl4.position.set(0.2, 6.8, -0.4);
+    cl4.scale.set(1.1, 0.9, 1.1);
+    cl4.castShadow = true;
+    nodeGroup.add(cl4);
 
     nodeGroup.position.set(x, y, z);
     this.group.add(nodeGroup);
@@ -617,26 +653,34 @@ export class MiningAndHarvestingSystem {
 
   public createBirchTree(x: number, y: number, z: number): THREE.Group {
     const nodeGroup = new THREE.Group();
-    const birchMat = new THREE.MeshStandardMaterial({ color: 0xf1f5f9, roughness: 0.7 });
+    const birchMat = new THREE.MeshStandardMaterial({ color: 0xf1f5f9, roughness: 0.68 });
     const darkNotchMat = new THREE.MeshStandardMaterial({ color: 0x18181b, roughness: 0.9 });
-    const leafMat = new THREE.MeshStandardMaterial({ color: 0x84cc16, roughness: 0.7 });
+    const leafMat1 = new THREE.MeshStandardMaterial({ color: 0x84cc16, roughness: 0.65 });
+    const leafMat2 = new THREE.MeshStandardMaterial({ color: 0xa3e635, roughness: 0.65 });
 
-    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.38, 5.8, 8), birchMat);
-    trunk.position.y = 2.9;
+    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.40, 6.2, 14), birchMat);
+    trunk.position.y = 3.1;
     trunk.castShadow = true;
     nodeGroup.add(trunk);
 
-    for (let n = 0; n < 5; n++) {
-      const notch = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.08, 0.52), darkNotchMat);
-      notch.position.set(0, 1.2 + n * 0.9, 0);
-      notch.rotation.y = n * 1.3;
+    for (let n = 0; n < 6; n++) {
+      const notch = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.08, 0.54), darkNotchMat);
+      notch.position.set(0, 1.0 + n * 0.85, 0);
+      notch.rotation.y = n * 1.35;
       nodeGroup.add(notch);
     }
 
-    const crown1 = new THREE.Mesh(new THREE.ConeGeometry(2.0, 4.2, 7), leafMat);
+    const crown1 = new THREE.Mesh(new THREE.IcosahedronGeometry(2.1, 2), leafMat1);
     crown1.position.y = 6.2;
+    crown1.scale.set(1.0, 1.4, 1.0);
     crown1.castShadow = true;
     nodeGroup.add(crown1);
+
+    const crown2 = new THREE.Mesh(new THREE.IcosahedronGeometry(1.6, 2), leafMat2);
+    crown2.position.set(0.4, 7.5, 0.2);
+    crown2.scale.set(0.9, 1.2, 0.9);
+    crown2.castShadow = true;
+    nodeGroup.add(crown2);
 
     nodeGroup.position.set(x, y, z);
     this.group.add(nodeGroup);

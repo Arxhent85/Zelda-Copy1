@@ -6,6 +6,7 @@ interface TouchControlsProps {
   onCameraRotate: (dx: number, dy: number) => void;
   onAttack: () => void;
   onJumpGlide: () => void;
+  onJumpHold?: (holding: boolean) => void;
   onFlyToggle?: () => void;
   onSprintDodge: (sprint: boolean) => void;
   onInteract: () => void;
@@ -33,6 +34,7 @@ export const VirtualTouchControls: React.FC<TouchControlsProps> = ({
   onCameraRotate,
   onAttack,
   onJumpGlide,
+  onJumpHold,
   onFlyToggle,
   onSprintDodge,
   onInteract,
@@ -338,11 +340,27 @@ export const VirtualTouchControls: React.FC<TouchControlsProps> = ({
           <button
             onTouchStart={(e) => {
               e.stopPropagation();
+              onJumpHold?.(true);
               onJumpGlide();
+            }}
+            onTouchEnd={(e) => {
+              e.stopPropagation();
+              onJumpHold?.(false);
+            }}
+            onTouchCancel={(e) => {
+              e.stopPropagation();
+              onJumpHold?.(false);
+            }}
+            onMouseDown={() => {
+              onJumpHold?.(true);
+              onJumpGlide();
+            }}
+            onMouseUp={() => {
+              onJumpHold?.(false);
             }}
             onClick={onJumpGlide}
             className="flex h-14 w-14 items-center justify-center rounded-full bg-cyan-500/90 text-white shadow-xl backdrop-blur-md active:scale-90"
-            title="Jump / Paraglide (Space)"
+            title="Jump / Paraglide (Space - Halten zum Gleiten, Loslassen zum schnellen Fallen)"
           >
             <Wind className="h-7 w-7" />
           </button>

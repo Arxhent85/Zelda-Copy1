@@ -342,4 +342,116 @@ export class TerrainManager {
     }
     colAttr.needsUpdate = true;
   }
+
+  /**
+   * Pristine procedural height formula without any deformation deltas
+   */
+  public static getOriginalProceduralHeight(x: number, z: number): number {
+    const nx = x * 0.003;
+    const nz = z * 0.003;
+
+    // Base continental elevation
+    let height = noise2DPrimary(nx, nz) * 25.0;
+
+    // Mountain ridges (North & West region)
+    const mountainWeight = Math.max(0, (z + 100) / 300) * Math.max(0, (x + 200) / 400);
+    const mountainNoise = Math.abs(noise2DSecondary(nx * 2.5, nz * 2.5));
+    height += mountainNoise * 65.0 * mountainWeight;
+
+    // Rolling hill details
+    const hillNoise = noise2DDetail(nx * 8.0, nz * 8.0) * 4.0;
+    height += hillNoise;
+
+    // Central Shrine Basin flattening (soft valley around 0, 0)
+    const distFromCenter = Math.sqrt(x * x + z * z);
+    if (distFromCenter < 90) {
+      const flattenFactor = Math.min(1.0, distFromCenter / 90);
+      const targetHeight = 4.0 + noise2DDetail(nx * 5, nz * 5) * 1.5;
+      height = THREE.MathUtils.lerp(targetHeight, height, flattenFactor);
+    }
+
+    // Lake carving (South-East region around x=150, z=-150)
+    const lakeDx = x - 150;
+    const lakeDz = z + 150;
+    const distFromLake = Math.sqrt(lakeDx * lakeDx + lakeDz * lakeDz);
+    if (distFromLake < 120) {
+      const lakeFactor = Math.pow(Math.max(0, 1 - distFromLake / 120), 2);
+      height -= lakeFactor * 18.0;
+    }
+
+    return height;
+  }
+
+  /**
+   * Resets the entire terrain back to pristine procedural starter state:
+   * clears all deformation deltas, restores original procedural heights and biome vertex colors.
+   */
+  public resetToOriginalProceduralTerrain() {
+    TerrainManager.deformationDeltas.clear();
+    TerrainManager.WATER_LEVEL = 1.0;
+
+    if (!this.terrainGeometry) return;
+    const posAttr = this.terrainGeometry.attributes.position;
+    const colAttr = this.terrainGeometry.attributes.color;
+    const count = posAttr.count;
+
+    const cSand = new THREE.Color('#d9c59a');
+    const cPlainsGreen = new THREE.Color('#388e3c');
+    const cEmeraldValley = new THREE.Color('#2e7d32');
+    const cForestMoss = new THREE.Color('#1b5e20');
+    const cRockSlate = new THREE.Color('#546e7a');
+    const cSnowPure = new THREE.Color('#ffffff');
+    const cSnowIce = new THREE.Color('#e0f7fa');
+    const tempCol = new THREE.Color();
+
+    for (let i = 0; i < count; i++) {
+      const vx = posAttr.getX(i);
+      const vz = posAttr.getZ(i);
+      const vy = TerrainManager.getOriginalProceduralHeight(vx, vz);
+      posAttr.setY(i, vy);
+    }
+    posAttr.needsUpdate = true;
+    this.terrainGeometry.computeVertexNormals();
+    this.syncHeightGrid();
+
+    if (colAttr) {
+      for (let i = 0; i < count; i++) {
+        const vx = posAttr.getX(i);
+        const vz = posAttr.getZ(i);
+        const vy = posAttr.getY(i);
+        const normal = TerrainManager.getTerrainNormal(vx, vz);
+        const slope = 1.0 - normal.y;
+
+        if (vy < TerrainManager.WATER_LEVEL + 1.2) {
+          tempCol.copy(cSand).lerp(cPlainsGreen, Math.max(0, (vy - TerrainManager.WATER_LEVEL) / 1.2));
+        } else if (slope > 0.48) {
+          tempCol.copy(cRockSlate);
+          if (vy > 25.0) tempCol.lerp(cSnowPure, Math.min(1.0, (vy - 25.0) / 20.0) * 0.35);
+        } else if (vy > 25.0) {
+          const snowDepth = Math.min(1.0, (vy - 25.0) / 10.0);
+          const uprightFactor = Math.pow(Math.max(0, normal.y), 1.5);
+          if (uprightFactor > 0.35) {
+            tempCol.copy(cSnowIce).lerp(cSnowPure, snowDepth * uprightFactor);
+          } else {
+            tempCol.copy(cRockSlate).lerp(cSnowIce, snowDepth * 0.5);
+          }
+        } else if (vy > 18.0) {
+          const alpineFactor = (vy - 18.0) / 7.0;
+          const noiseVar = (noise2DDetail(vx * 0.08, vz * 0.08) + 1.0) * 0.5;
+          const uprightFactor = Math.max(0, normal.y);
+          if (noiseVar + alpineFactor * 0.8 > 0.72 && uprightFactor > 0.5) {
+            tempCol.copy(cSnowIce).lerp(cSnowPure, 0.7);
+          } else {
+            tempCol.copy(cForestMoss).lerp(cRockSlate, alpineFactor * 0.4);
+          }
+        } else {
+          const detailVar = (noise2DDetail(vx * 0.05, vz * 0.05) + 1.0) * 0.5;
+          tempCol.copy(cPlainsGreen).lerp(cEmeraldValley, detailVar);
+        }
+
+        colAttr.setXYZ(i, tempCol.r, tempCol.g, tempCol.b);
+      }
+      colAttr.needsUpdate = true;
+    }
+  }
 }

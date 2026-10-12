@@ -86,7 +86,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ settings, onEngineReady,
       const finalZ = Math.abs(touchZ) > 0.05 ? touchZ : kz;
 
       const isSprint = !!keys.current['ShiftLeft'] || !!keys.current['ShiftRight'];
-      const isJump = !!keys.current['Space'];
+      const isJump = !!keys.current['Space'] || !!engineRef.current?.touchJump;
       const isAttack = !!keys.current['KeyF'] || !!keys.current['ControlLeft'];
       const isDodge = !!keys.current['KeyC'];
 

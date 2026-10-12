@@ -423,6 +423,9 @@ export default function App() {
             if (msg) showToast(msg);
           }
         }}
+        onJumpHold={(holding) => {
+          if (engine) engine.touchJump = holding;
+        }}
         onJumpGlide={() => {
           if (engine) {
             if (engine.physics.isSwimming) {
@@ -550,6 +553,12 @@ export default function App() {
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
         settings={settings}
+        onResetWorld={() => {
+          if (engine) {
+            engine.resetWorldToDefault();
+            showToast('✨ Welt komplett auf Standard-Zustand zurückgesetzt!');
+          }
+        }}
         onUpdateSettings={(newS) => {
           setSettings((prev) => ({ ...prev, ...newS }));
           if (engine) {

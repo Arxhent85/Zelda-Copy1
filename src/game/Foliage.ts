@@ -904,9 +904,18 @@ export class FoliageManager {
     treeProto.add(f2);
 
     // Tree generation is now handled by MiningAndHarvestingSystem so ALL trees can be chopped down!
-    // 2. Boulders & Rocks
-    const rockGeo = new THREE.DodecahedronGeometry(1.5, 1);
-    const rockMat = new THREE.MeshStandardMaterial({ color: 0x5a626a, roughness: 0.8 });
+    // 2. High-Poly Organic Boulders & Weathered Granite Rocks
+    const rockGeo = new THREE.IcosahedronGeometry(1.4, 2);
+    const rockMat = new THREE.MeshStandardMaterial({
+      color: 0x5e6872,
+      roughness: 0.78,
+      metalness: 0.08,
+      flatShading: false,
+    });
+    const mossCapMat = new THREE.MeshStandardMaterial({
+      color: 0x2e5927,
+      roughness: 0.88,
+    });
 
     for (let i = 0; i < 90; i++) {
       const x = (Math.random() - 0.5) * 500;
@@ -916,11 +925,20 @@ export class FoliageManager {
       if (y > TerrainManager.WATER_LEVEL) {
         const rock = new THREE.Mesh(rockGeo, rockMat);
         rock.position.set(x, y + 0.5, z);
-        const s = 0.6 + Math.random() * 1.8;
-        rock.scale.set(s, s * 0.7, s);
+        const s = 0.7 + Math.random() * 1.6;
+        rock.scale.set(s, s * 0.72, s * 1.1);
         rock.rotation.set(Math.random(), Math.random(), Math.random());
         rock.castShadow = true;
         rock.receiveShadow = true;
+
+        // Subtle moss crest on top of larger boulders
+        if (s > 1.2) {
+          const mossCap = new THREE.Mesh(new THREE.CylinderGeometry(0.85 * s, 0.95 * s, 0.15 * s, 12), mossCapMat);
+          mossCap.position.y = 0.85 * s;
+          mossCap.castShadow = true;
+          rock.add(mossCap);
+        }
+
         this.treeGroup.add(rock);
 
         // Add rock boulder collision
@@ -938,7 +956,7 @@ export class FoliageManager {
           mesh: rock,
           x,
           z,
-          scaleY: s * 0.7,
+          scaleY: s * 0.72,
           obstacleIndex: this.obstacles.length - 1,
         });
       }

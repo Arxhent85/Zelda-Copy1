@@ -250,37 +250,42 @@ export class PhysicsEngine {
         }
       }
     } else if (this.isFlying || this.isGliding) {
-      // 🪂 ACTIVE SOARING / PARAGLIDER FLIGHT MODE
-      this.actionState = 'GLIDE';
       if (isJumpPressed || this.isAscending) {
-        // Ascend (Steigen mit Windauftrieb)
-        this.velocity.y = Math.min(26.0, this.velocity.y + delta * 42.0);
+        // 🪂 ACTIVE SOARING / PARAGLIDER FLIGHT MODE WHILE JUMP IS HELD
+        this.actionState = 'GLIDE';
+        if (this.isAscending) {
+          this.velocity.y = Math.min(26.0, this.velocity.y + delta * 42.0);
+        } else {
+          // Gentle ascending lift / soar while holding jump
+          this.velocity.y = Math.min(24.0, Math.max(this.velocity.y + delta * 36.0, 4.0));
+        }
       } else if (isDodgePressed || this.isDescending) {
-        // Descend (Sinken / Aerodynamischer Sturzflug)
-        this.velocity.y = Math.max(-24.0, this.velocity.y - delta * 42.0);
+        // Aerodynamic fast dive
+        this.velocity.y = Math.max(-32.0, this.velocity.y - delta * 48.0);
       } else {
-        // Gentle stable aerodynamic glide
-        this.velocity.y = Math.max(-2.5, this.velocity.y * 0.95);
+        // 🛑 JUMP/FLIGHT BUTTON RELEASED!
+        // Immediately cancel flight mode and drop rapidly with full gravity!
+        this.isFlying = false;
+        this.isGliding = false;
+        this.actionState = 'FALL';
       }
     } else if (isJumpPressed) {
       this.jumpHoldTimer += delta;
 
       if (!this.isGrounded) {
-        // MID-AIR: Double Jump & Flight Paraglider Mode
+        // MID-AIR: Pressing or holding jump mid-air re-opens paraglider / flight!
+        this.isFlying = true;
+        this.isGliding = true;
+        this.actionState = 'GLIDE';
+
         if (justPressedJump && !this.hasDoubleJumped) {
           // 🚀 DOPPELSPRUNG (Double Jump Impulse)
           this.hasDoubleJumped = true;
           this.velocity.y = 16.5;
-          this.isFlying = true;
-          this.isGliding = true;
-          this.actionState = 'GLIDE';
           audioEngine.playGliderOpen();
         } else {
-          // 🪂 CONTINUOUS FLIGHT / PARAGLIDER
-          this.isFlying = true;
-          this.isGliding = true;
-          this.actionState = 'GLIDE';
-          this.velocity.y = Math.min(28.0, Math.max(this.velocity.y + delta * 60.0, 7.0));
+          // 🪂 Continuous soaring while holding jump
+          this.velocity.y = Math.min(24.0, Math.max(this.velocity.y + delta * 36.0, 4.0));
         }
       } else if (this.isGrounded && !this.isClimbing && stats.stamina > 5) {
         // 🦘 NORMAL GROUND JUMP IMPULSE
@@ -372,17 +377,22 @@ export class PhysicsEngine {
     }
 
     // 5. Gravity & Ground Collision
-    if (this.isFlying) {
-      // Gentle floating descent rate when not ascending
-      if (!isJumpPressed) {
-        this.velocity.y = Math.max(-1.5, this.velocity.y - delta * 3.0);
+    if (this.isFlying || this.isGliding) {
+      if (!isJumpPressed && !this.isAscending) {
+        // Redundant guarantee: If jump key/button is released, immediately exit flight and drop fast!
+        this.isFlying = false;
+        this.isGliding = false;
+        this.actionState = 'FALL';
+        this.velocity.y -= delta * 52.0;
+        this.velocity.y = Math.max(-50.0, this.velocity.y);
+      } else {
+        // Maintained flight/glide terminal vertical clamp
+        this.velocity.y = Math.max(-4.0, this.velocity.y);
       }
-    } else if (this.isGliding) {
-      // Paraglider terminal fall limit
-      this.velocity.y = Math.max(-2.5, this.velocity.y - delta * 5.0);
     } else if (!this.isGrounded && !this.isClimbing && !this.isSwimming) {
-      // Snappy, punchy gravity when falling
+      // Snappy, rapid fall gravity - drops player quickly to the ground
       this.velocity.y -= delta * 52.0;
+      this.velocity.y = Math.max(-50.0, this.velocity.y);
     }
 
     const wasGrounded = this.isGrounded;

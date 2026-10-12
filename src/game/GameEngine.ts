@@ -417,6 +417,8 @@ export class GameEngine {
     }
   }
 
+  public touchJump: boolean = false;
+
   public inputPollFn?: () => {
     moveX: number;
     moveZ: number;
@@ -1224,5 +1226,37 @@ export class GameEngine {
     }
 
     return null;
+  }
+
+  /**
+   * Resets the entire world to the pristine default state:
+   * Clears all player built structures, tracks, roads, walls, terraforming deltas,
+   * restores natural procedural ground heights, snaps nature and props,
+   * and teleports Link back to the starter shrine basin!
+   */
+  public resetWorldToDefault() {
+    this.terrainDeformation.clearAllDeltas();
+    this.editorManager.resetWorldToDefault();
+
+    // Teleport Link back to starter spawn basin
+    const spawnY = TerrainManager.getTerrainHeight(0, 0);
+    this.physics.position.set(0, spawnY + 0.2, 0);
+    this.physics.velocity.set(0, 0, 0);
+    this.physics.rotation = 0;
+    this.physics.actionState = 'IDLE';
+    this.physics.isGrounded = true;
+    this.physics.isFlying = false;
+    this.physics.isGliding = false;
+    this.physics.isClimbing = false;
+    this.physics.isSwimming = false;
+    this.physics.hasDoubleJumped = false;
+
+    // Reset camera orientation
+    this.cameraControls.yaw = 0;
+    this.cameraControls.pitch = 0.25;
+    this.cameraControls.distance = 7.0;
+
+    if (this.onStateUpdate) this.onStateUpdate();
+    if (this.onToastMessage) this.onToastMessage('🔄 Welt komplett auf Standard zurückgesetzt!');
   }
 }

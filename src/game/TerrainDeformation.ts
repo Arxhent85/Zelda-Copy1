@@ -124,4 +124,15 @@ export class TerrainDeformationManager {
       console.warn('Failed to load terrain deltas:', e);
     }
   }
+
+  /**
+   * Clears all deformation deltas in memory and localStorage
+   */
+  public clearAllDeltas() {
+    this.deltas.clear();
+    TerrainManager.clearHeightmapCache();
+    try {
+      localStorage.removeItem('HYRULE_TERRAIN_DELTAS');
+    } catch {}
+  }
 }

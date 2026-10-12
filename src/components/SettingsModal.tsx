@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Sliders, Volume2, Monitor, Gamepad2, Sun, Moon, Clock, Play, Pause, Maximize, Minimize } from 'lucide-react';
+import { X, Sliders, Volume2, Monitor, Gamepad2, Sun, Moon, Clock, Play, Pause, Maximize, Minimize, RotateCcw } from 'lucide-react';
 import { GameSettings, GraphicsQuality } from '../types';
 
 interface SettingsModalProps {
@@ -7,6 +7,7 @@ interface SettingsModalProps {
   onClose: () => void;
   settings: GameSettings;
   onUpdateSettings: (newSettings: Partial<GameSettings>) => void;
+  onResetWorld?: () => void;
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
@@ -14,6 +15,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onClose,
   settings,
   onUpdateSettings,
+  onResetWorld,
 }) => {
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
 
@@ -290,6 +292,33 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               </div>
             </div>
           </div>
+
+          {/* Welt-Verwaltung & Zurücksetzen auf Standardmodus */}
+          {onResetWorld && (
+            <div className="flex flex-col gap-2 rounded-2xl border border-red-500/30 bg-red-950/30 p-4 shadow-lg">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                <div className="flex flex-col">
+                  <div className="text-red-300 font-bold text-sm flex items-center gap-2">
+                    <RotateCcw className="h-4 w-4 text-red-400" /> Welt auf Standard-Zustand zurücksetzen
+                  </div>
+                  <div className="text-xs text-slate-400 mt-0.5">
+                    Löscht alle gebauten Straßen, Häuser, Rennstrecken und Gelände-Verformungen. Die Welt startet wie neu im Standardmodus.
+                  </div>
+                </div>
+                <button
+                  onClick={() => {
+                    if (window.confirm('Möchtest du wirklich die gesamte Welt auf den Standard-Zustand zurücksetzen? Alle Straßen, Bauten und Gelände-Änderungen werden unwiderruflich gelöscht.')) {
+                      onResetWorld();
+                      onClose();
+                    }
+                  }}
+                  className="w-full sm:w-auto flex items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-red-700 to-rose-600 hover:from-red-600 px-4 py-2 text-xs font-bold text-white shadow-md active:scale-95 transition border border-red-400/40"
+                >
+                  <RotateCcw className="h-4 w-4" /> Standard-Welt laden
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
