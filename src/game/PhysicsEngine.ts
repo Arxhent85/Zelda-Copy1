@@ -14,6 +14,8 @@ export class PhysicsEngine {
   public isGliding = false;
   public isFlying = false;
   public isSwimming = false;
+  public isAscending = false;
+  public isDescending = false;
 
   private jumpHoldTimer = 0;
 
@@ -43,9 +45,24 @@ export class PhysicsEngine {
     this.isFlying = true;
     this.isGliding = true;
     this.actionState = 'GLIDE';
-    this.velocity.y = 22.0;
+    this.velocity.y = 24.0;
     this.hasDoubleJumped = true;
     audioEngine.playGliderOpen();
+  }
+
+  /**
+   * Toggles flight mode on or off
+   */
+  public toggleFlight(): boolean {
+    if (this.isFlying) {
+      this.isFlying = false;
+      this.isGliding = false;
+      this.actionState = 'FALL';
+      return false;
+    } else {
+      this.triggerFlightBoost();
+      return true;
+    }
   }
 
   /**
@@ -131,7 +148,8 @@ export class PhysicsEngine {
     isBowAiming: boolean,
     stats: PlayerStats,
     onStaminaDepleted: () => void,
-    cameraPitch: number = 0
+    cameraPitch: number = 0,
+    isRoadSpeedBoost: boolean = false
   ) {
     this.attackCooldown = Math.max(0, this.attackCooldown - delta);
     this.dodgeCooldown = Math.max(0, this.dodgeCooldown - delta);
@@ -193,37 +211,56 @@ export class PhysicsEngine {
 
     // 3. Jump, Double Jump, Flight, Diving & Surfacing Logic
     if (this.isSwimming) {
-      // SWIMMING WATER CONTROLS (Diving & Surfacing)
-      const isDivingInput = isDodgePressed || (cameraPitch < -0.28 && Math.abs(moveDir.z) > 0.2);
-      const isSurfacingInput = isJumpPressed || (cameraPitch > 0.28 && Math.abs(moveDir.z) > 0.2);
-
-      if (isSurfacingInput) {
-        // Swim upward / Surface (Auftauchen)
-        this.velocity.y = 5.0;
-        this.position.y = Math.min(surfaceSwimY + 0.3, this.position.y + delta * 5.0);
-
-        // If player reaches surface and holds jump near shore, allow leaping out onto land!
-        if (this.position.y >= surfaceSwimY - 0.2 && waterDepthAtPos < 1.4) {
-          this.velocity.y = 8.5;
-          this.isSwimming = false;
-          this.isGrounded = false;
-        }
-      } else if (isDivingInput) {
-        // Swim downward / Dive (Abtauchen)
-        this.velocity.y = -5.0;
-        this.position.y = Math.max(terrainY + 0.35, this.position.y - delta * 5.0);
+      // SWIMMING WATER CONTROLS (Diving, Surfacing & Leaping out into the air/flight!)
+      if (justPressedJump) {
+        // 🐬 DELPHIN-SPRUNG AUS DEM WASSER: Katapultiert Link kraftvoll in die Luft!
+        this.velocity.y = 16.5; // High catapult upward out of water
+        // Forward impulse along current swimming heading
+        const swimDir = new THREE.Vector3(Math.sin(this.rotation), 0, Math.cos(this.rotation));
+        this.velocity.add(swimDir.multiplyScalar(8.0));
+        this.isSwimming = false;
+        this.isGrounded = false;
+        this.actionState = 'JUMP';
+        this.hasDoubleJumped = false; // Allows immediate double-jump / glide activation!
+        audioEngine.playWaterSplash();
       } else {
-        // Neutral buoyancy - settle at surfaceSwimY (submerged chest deep)
-        if (this.position.y < surfaceSwimY - 0.08) {
-          this.position.y = Math.min(surfaceSwimY, this.position.y + delta * 3.2);
-          this.velocity.y = 0;
-        } else if (this.position.y > surfaceSwimY + 0.08) {
-          this.position.y = Math.max(surfaceSwimY, this.position.y - delta * 3.2);
-          this.velocity.y = 0;
+        const isDivingInput = isDodgePressed || (cameraPitch < -0.28 && Math.abs(moveDir.z) > 0.2);
+        const isSurfacingInput = isJumpPressed || (cameraPitch > 0.28 && Math.abs(moveDir.z) > 0.2);
+
+        if (isSurfacingInput) {
+          // Swim upward / Surface (Auftauchen)
+          this.velocity.y = 5.0;
+          this.position.y = Math.min(surfaceSwimY + 0.3, this.position.y + delta * 5.0);
+        } else if (isDivingInput) {
+          // Swim downward / Dive (Abtauchen)
+          this.velocity.y = -5.0;
+          this.position.y = Math.max(terrainY + 0.35, this.position.y - delta * 5.0);
         } else {
-          this.position.y = surfaceSwimY;
-          this.velocity.y = 0;
+          // Neutral buoyancy - settle at surfaceSwimY (submerged chest deep)
+          if (this.position.y < surfaceSwimY - 0.08) {
+            this.position.y = Math.min(surfaceSwimY, this.position.y + delta * 3.2);
+            this.velocity.y = 0;
+          } else if (this.position.y > surfaceSwimY + 0.08) {
+            this.position.y = Math.max(surfaceSwimY, this.position.y - delta * 3.2);
+            this.velocity.y = 0;
+          } else {
+            this.position.y = surfaceSwimY;
+            this.velocity.y = 0;
+          }
         }
+      }
+    } else if (this.isFlying || this.isGliding) {
+      // 🪂 ACTIVE SOARING / PARAGLIDER FLIGHT MODE
+      this.actionState = 'GLIDE';
+      if (isJumpPressed || this.isAscending) {
+        // Ascend (Steigen mit Windauftrieb)
+        this.velocity.y = Math.min(26.0, this.velocity.y + delta * 42.0);
+      } else if (isDodgePressed || this.isDescending) {
+        // Descend (Sinken / Aerodynamischer Sturzflug)
+        this.velocity.y = Math.max(-24.0, this.velocity.y - delta * 42.0);
+      } else {
+        // Gentle stable aerodynamic glide
+        this.velocity.y = Math.max(-2.5, this.velocity.y * 0.95);
       }
     } else if (isJumpPressed) {
       this.jumpHoldTimer += delta;
@@ -239,11 +276,10 @@ export class PhysicsEngine {
           this.actionState = 'GLIDE';
           audioEngine.playGliderOpen();
         } else {
-          // 🪂 CONTINUOUS FLIGHT / PARAGLIDER (Holding Jump in air)
+          // 🪂 CONTINUOUS FLIGHT / PARAGLIDER
           this.isFlying = true;
           this.isGliding = true;
           this.actionState = 'GLIDE';
-          // Smooth upward lift & flight momentum
           this.velocity.y = Math.min(28.0, Math.max(this.velocity.y + delta * 60.0, 7.0));
         }
       } else if (this.isGrounded && !this.isClimbing && stats.stamina > 5) {
@@ -260,10 +296,6 @@ export class PhysicsEngine {
       }
     } else {
       this.jumpHoldTimer = 0;
-      if (!this.isGrounded) {
-        this.isFlying = false;
-        this.isGliding = false;
-      }
     }
 
     this.wasJumpPressed = isJumpPressed;
@@ -303,9 +335,15 @@ export class PhysicsEngine {
         }
       }
 
+      // 🏎️ High-Speed Road & Circuit Bonus (+30% velocity on paved tracks & roads)
+      if (this.isGrounded && isRoadSpeedBoost && !this.isSwimming && !this.isClimbing) {
+        speed *= 1.30;
+      }
+
       if (stats.stamina <= 0) {
         onStaminaDepleted();
         this.isGliding = false;
+        this.isFlying = false;
         this.isClimbing = false;
       }
 

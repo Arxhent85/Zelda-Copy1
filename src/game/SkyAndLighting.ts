@@ -7,24 +7,39 @@ export class SkyAndLightingManager {
   public ambientLight: THREE.AmbientLight | null = null;
   public hemiLight: THREE.HemisphereLight | null = null;
   public moonLight: THREE.DirectionalLight | null = null;
+  public rimLight: THREE.DirectionalLight | null = null;
   public fog: THREE.FogExp2 | null = null;
 
   private skyMaterial: THREE.ShaderMaterial | null = null;
   public timeOfDay = 10.5; // 0.0 to 24.0 hours (Starts mid-morning)
-  public timeScale = 0.05; // Day lasts ~480 seconds (8 mins)
+  public timeScale = 0.05; // Base day duration
+  public isTimeCycleActive = true; // Auto day/night cycle enabled or frozen
+  public customTimeSpeed = 1.0; // Multiplier for day/night progression
 
   constructor(private scene: THREE.Scene) {}
+
+  public setTimeOfDay(hour: number) {
+    this.timeOfDay = Math.max(0, Math.min(24, hour));
+  }
+
+  public setTimeCycleActive(active: boolean) {
+    this.isTimeCycleActive = active;
+  }
+
+  public setTimeSpeed(speed: number) {
+    this.customTimeSpeed = Math.max(0, speed);
+  }
 
   public initLighting(quality: GraphicsQuality) {
     // 1. Fog
     this.fog = new THREE.FogExp2(0x87ceeb, 0.0025);
     this.scene.fog = this.fog;
 
-    // 2. Ambient & Hemisphere Light
-    this.ambientLight = new THREE.AmbientLight(0xffffff, 0.45);
+    // 2. Ambient & Hemisphere Light (Tuned for rich contrast and no overexposure)
+    this.ambientLight = new THREE.AmbientLight(0xffffff, 0.32);
     this.scene.add(this.ambientLight);
 
-    this.hemiLight = new THREE.HemisphereLight(0x87ceeb, 0x3b7a36, 0.6);
+    this.hemiLight = new THREE.HemisphereLight(0x87ceeb, 0x224a1e, 0.38);
     this.scene.add(this.hemiLight);
 
     const isMobile = typeof window !== 'undefined' && (
@@ -32,30 +47,39 @@ export class SkyAndLightingManager {
       ('ontouchstart' in window && window.innerWidth < 1024)
     );
 
-    // 3. Sun Directional Light (Main shadow caster)
-    const sunLight = new THREE.DirectionalLight(0xfffaed, 1.4);
+    // 3. Sun Directional Light (Main shadow caster - balanced 1.15 intensity)
+    const sunLight = new THREE.DirectionalLight(0xfffaed, 1.15);
     sunLight.castShadow = quality !== 'low';
 
-    // Configure Shadow Map
-    const shadowRes = isMobile ? 512 : (quality === 'ultra' ? 2048 : quality === 'high' ? 1024 : 512);
+    // Configure Tight Shadow Map Cascade
+    const shadowRes = isMobile ? 1024 : (quality === 'ultra' ? 2048 : quality === 'high' ? 2048 : 1024);
     sunLight.shadow.mapSize.width = shadowRes;
     sunLight.shadow.mapSize.height = shadowRes;
-    sunLight.shadow.camera.near = 10;
-    sunLight.shadow.camera.far = 350;
-    sunLight.shadow.camera.left = -80;
-    sunLight.shadow.camera.right = 80;
-    sunLight.shadow.camera.top = 80;
-    sunLight.shadow.camera.bottom = -80;
-    sunLight.shadow.bias = -0.0003;
-    sunLight.shadow.radius = quality === 'ultra' ? 3 : 1.5;
+    sunLight.shadow.camera.near = 1.0;
+    sunLight.shadow.camera.far = 320;
+    sunLight.shadow.camera.left = -65;
+    sunLight.shadow.camera.right = 65;
+    sunLight.shadow.camera.top = 65;
+    sunLight.shadow.camera.bottom = -65;
+    sunLight.shadow.bias = -0.0001;
+    sunLight.shadow.normalBias = 0.025;
 
     this.scene.add(sunLight);
+    this.scene.add(sunLight.target);
     this.dirLight = sunLight;
 
-    // 4. Moon Light
+    // 4. Subtle BotW-style Rim Light (Opposes sun angle for hero & foliage silhouette highlights)
+    const rim = new THREE.DirectionalLight(0xbae6fd, 0.25);
+    rim.castShadow = false;
+    this.scene.add(rim);
+    this.scene.add(rim.target);
+    this.rimLight = rim;
+
+    // 5. Moon Light
     const moon = new THREE.DirectionalLight(0x8faaff, 0.2);
     moon.castShadow = false;
     this.scene.add(moon);
+    this.scene.add(moon.target);
     this.moonLight = moon;
 
     // 5. Procedural Sky Dome Shader
@@ -127,8 +151,10 @@ export class SkyAndLightingManager {
   }
 
   public update(delta: number, playerPos: THREE.Vector3) {
-    // Advance Day-Night cycle
-    this.timeOfDay = (this.timeOfDay + delta * this.timeScale) % 24.0;
+    // Advance Day-Night cycle only if active
+    if (this.isTimeCycleActive) {
+      this.timeOfDay = (this.timeOfDay + delta * this.timeScale * this.customTimeSpeed) % 24.0;
+    }
 
     // Sun angle calculation (6 = sunrise East, 12 = overhead South, 18 = sunset West)
     const sunAngle = ((this.timeOfDay - 6.0) / 24.0) * Math.PI * 2;
@@ -148,6 +174,13 @@ export class SkyAndLightingManager {
     if (this.moonLight) {
       this.moonLight.position.set(playerPos.x - sunX, playerPos.y - sunY, playerPos.z - sunZ);
       this.moonLight.target.position.copy(playerPos);
+      this.moonLight.target.updateMatrixWorld();
+    }
+
+    if (this.rimLight) {
+      this.rimLight.position.set(playerPos.x - sunX * 0.6, playerPos.y + 45, playerPos.z - sunZ * 0.6);
+      this.rimLight.target.position.copy(playerPos);
+      this.rimLight.target.updateMatrixWorld();
     }
 
     // Sky Dome tracks player position
@@ -165,21 +198,42 @@ export class SkyAndLightingManager {
     if (isSunset) {
       cTop.set('#4a2e5d'); // Twilight purple
       cBottom.set('#f37335'); // Vibrant sunset orange
-      if (this.ambientLight) this.ambientLight.color.set('#ffab6b');
-      if (this.dirLight) this.dirLight.color.set('#ffaa44');
+      if (this.ambientLight) {
+        this.ambientLight.color.set('#ffab6b');
+        this.ambientLight.intensity = 0.28;
+      }
+      if (this.dirLight) {
+        this.dirLight.color.set('#ffaa44');
+        this.dirLight.intensity = 0.85;
+      }
+      if (this.hemiLight) this.hemiLight.intensity = 0.3;
       if (this.fog) this.fog.color.set('#f37335');
     } else if (isDay) {
       cTop.set('#2980b9'); // Emerald Zelda Sky Blue
       cBottom.set('#87ceeb');
-      if (this.ambientLight) this.ambientLight.color.set('#ffffff');
-      if (this.dirLight) this.dirLight.color.set('#fffce6');
+      if (this.ambientLight) {
+        this.ambientLight.color.set('#ffffff');
+        this.ambientLight.intensity = 0.32;
+      }
+      if (this.dirLight) {
+        this.dirLight.color.set('#fffce6');
+        this.dirLight.intensity = 1.15;
+      }
+      if (this.hemiLight) this.hemiLight.intensity = 0.38;
       if (this.fog) this.fog.color.set('#87ceeb');
     } else {
       // Night
       cTop.set('#050b14');
       cBottom.set('#0f2027');
-      if (this.ambientLight) this.ambientLight.color.set('#1a2638');
-      if (this.dirLight) this.dirLight.color.set('#3a506b');
+      if (this.ambientLight) {
+        this.ambientLight.color.set('#1a2638');
+        this.ambientLight.intensity = 0.16;
+      }
+      if (this.dirLight) {
+        this.dirLight.color.set('#3a506b');
+        this.dirLight.intensity = 0.2;
+      }
+      if (this.hemiLight) this.hemiLight.intensity = 0.18;
       if (this.fog) this.fog.color.set('#0d1b2a');
     }
 

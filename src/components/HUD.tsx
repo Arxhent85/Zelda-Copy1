@@ -1,5 +1,5 @@
-import React from 'react';
-import { Heart, Sun, Moon, Gem, Crosshair } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Heart, Sun, Moon, Gem, Crosshair, Compass, Maximize, Minimize } from 'lucide-react';
 import { DamageText, PlayerStats } from '../types';
 
 interface HUDProps {
@@ -10,6 +10,13 @@ interface HUDProps {
   damageTexts: DamageText[];
   toastMessage: string | null;
   targetEnemyPos?: { x: number; y: number } | null;
+  onOpenQuickMenu?: () => void;
+  trackRace?: {
+    isRacing: boolean;
+    raceStartTime: number;
+    lapCount: number;
+    bestLapTime: number | null;
+  };
 }
 
 export const HUD: React.FC<HUDProps> = ({
@@ -20,7 +27,27 @@ export const HUD: React.FC<HUDProps> = ({
   damageTexts,
   toastMessage,
   targetEnemyPos,
+  onOpenQuickMenu,
+  trackRace,
 }) => {
+  const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
+
+  useEffect(() => {
+    const handleFsChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+    document.addEventListener('fullscreenchange', handleFsChange);
+    return () => document.removeEventListener('fullscreenchange', handleFsChange);
+  }, []);
+
+  const toggleFullscreen = () => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen?.().catch(() => {});
+    } else {
+      document.exitFullscreen?.().catch(() => {});
+    }
+  };
+
   // Calculate full, half, and empty hearts (stats.health is in quarters of a heart)
   const totalHearts = Math.ceil(stats.maxHealth / 4);
   const currentQuarters = stats.health;
@@ -85,10 +112,33 @@ export const HUD: React.FC<HUDProps> = ({
         </div>
       </div>
 
-      {/* Top Right: Clock & Weather */}
-      <div className="absolute top-4 right-4 z-10 flex items-center gap-2 rounded-full bg-slate-950/70 px-3.5 py-1.5 backdrop-blur-md border border-white/10 text-xs font-medium text-slate-200">
-        {isDay ? <Sun className="h-4 w-4 text-amber-400" /> : <Moon className="h-4 w-4 text-indigo-300" />}
-        <span>{formatTime(timeOfDay)}</span>
+      {/* Top Right: Clock, Weather, Fullscreen & Quick Menu Button */}
+      <div className="pointer-events-auto absolute top-4 right-4 z-30 flex items-center gap-2">
+        <div className="flex items-center gap-2 rounded-full bg-slate-950/80 px-3.5 py-1.5 backdrop-blur-md border border-white/10 text-xs font-medium text-slate-200 shadow-lg">
+          {isDay ? <Sun className="h-4 w-4 text-amber-400" /> : <Moon className="h-4 w-4 text-indigo-300" />}
+          <span>{formatTime(timeOfDay)}</span>
+        </div>
+
+        {/* Permanent Fullscreen Toggle Button */}
+        <button
+          onClick={toggleFullscreen}
+          className="flex items-center gap-1.5 rounded-full bg-slate-950/85 hover:bg-slate-900 border border-white/20 text-slate-200 hover:text-white px-3 py-1.5 text-xs shadow-lg active:scale-95 transition cursor-pointer"
+          title={isFullscreen ? 'Vollbild beenden' : 'Vollbild aktivieren'}
+        >
+          {isFullscreen ? <Minimize className="h-3.5 w-3.5 text-cyan-400" /> : <Maximize className="h-3.5 w-3.5 text-cyan-400" />}
+          <span className="hidden sm:inline font-semibold">{isFullscreen ? 'Fenster' : 'Vollbild'}</span>
+        </button>
+
+        {onOpenQuickMenu && (
+          <button
+            onClick={onOpenQuickMenu}
+            className="flex items-center gap-1.5 rounded-full bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-slate-950 font-black px-3.5 py-1.5 text-xs shadow-xl active:scale-95 transition border border-yellow-300/80 cursor-pointer"
+            title="Hauptmenü & Aktionen öffnen (ESC / P)"
+          >
+            <Compass className="h-4 w-4" />
+            <span>Menü</span>
+          </button>
+        )}
       </div>
 
       {/* Target Lock-on Reticle Overlay */}
@@ -121,6 +171,25 @@ export const HUD: React.FC<HUDProps> = ({
       {toastMessage && (
         <div className="absolute top-16 left-1/2 z-30 -translate-x-1/2 pointer-events-none rounded-full bg-slate-900/90 border border-emerald-500/30 px-6 py-2 text-center text-xs sm:text-sm font-bold text-emerald-300 shadow-2xl backdrop-blur-md animate-fade-in max-w-[88vw]">
           ✨ {toastMessage}
+        </div>
+      )}
+
+      {/* 🏎️ Circuit Lap Timer & Race Widget */}
+      {trackRace && trackRace.isRacing && (
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-3 bg-slate-950/90 border border-orange-500/60 rounded-2xl px-4 py-2 shadow-2xl backdrop-blur-md animate-fade-in pointer-events-none">
+          <div className="flex items-center gap-1.5 text-orange-400 font-black text-xs sm:text-sm whitespace-nowrap">
+            <span className="text-base animate-pulse">🏎️</span>
+            <span>RUNDE {trackRace.lapCount + 1}</span>
+          </div>
+          <div className="h-4 w-[1px] bg-white/20" />
+          <div className="font-mono text-cyan-300 font-bold text-xs sm:text-sm tracking-wider whitespace-nowrap">
+            ⏱️ {Math.max(0, performance.now() / 1000 - trackRace.raceStartTime).toFixed(1)}s
+          </div>
+          {trackRace.bestLapTime && (
+            <div className="text-[10px] sm:text-xs text-amber-300 font-semibold border-l border-white/10 pl-2 whitespace-nowrap">
+              🏆 Rekord: {trackRace.bestLapTime.toFixed(2)}s
+            </div>
+          )}
         </div>
       )}
 

@@ -56,9 +56,12 @@ export class EnemyManager {
 
     // 4. Ancient Stone Guardian Boss at West Ruins
     this.createStoneGuardian('boss_guardian', -160, -80);
+
+    // 5. Stone Talus (Felsen-Golem Miniboss) at East Highland
+    this.createStoneTalus('boss_talus', 150, 160);
   }
 
-  private createBoblin(id: string, x: number, z: number) {
+  public createBoblin(id: string, x: number, z: number): THREE.Group {
     const y = TerrainManager.getTerrainHeight(x, z);
     const group = new THREE.Group();
 
@@ -114,9 +117,10 @@ export class EnemyManager {
     };
 
     this.enemies.push({ state, mesh: group });
+    return group;
   }
 
-  private createGoomba(id: string, x: number, z: number) {
+  public createGoomba(id: string, x: number, z: number): THREE.Group {
     const y = TerrainManager.getTerrainHeight(x, z);
     const group = new THREE.Group();
 
@@ -218,9 +222,10 @@ export class EnemyManager {
     };
 
     this.enemies.push({ state, mesh: group });
+    return group;
   }
 
-  private createSlime(id: string, x: number, z: number) {
+  public createSlime(id: string, x: number, z: number): THREE.Group {
     const y = TerrainManager.getTerrainHeight(x, z);
     const group = new THREE.Group();
 
@@ -263,9 +268,10 @@ export class EnemyManager {
     };
 
     this.enemies.push({ state, mesh: group });
+    return group;
   }
 
-  private createStoneGuardian(id: string, x: number, z: number) {
+  public createStoneGuardian(id: string, x: number, z: number): THREE.Group {
     const y = TerrainManager.getTerrainHeight(x, z);
     const group = new THREE.Group();
 
@@ -316,6 +322,106 @@ export class EnemyManager {
     };
 
     this.enemies.push({ state, mesh: group });
+    return group;
+  }
+
+  public createStoneTalus(id: string, x: number, z: number): THREE.Group {
+    const y = TerrainManager.getTerrainHeight(x, z);
+    const group = new THREE.Group();
+
+    // Mossy Rock & Boulder materials
+    const rockMat = new THREE.MeshStandardMaterial({ color: 0x57606f, roughness: 0.95 });
+    const mossMat = new THREE.MeshStandardMaterial({ color: 0x3f6212, roughness: 0.9 });
+    const darkRockMat = new THREE.MeshStandardMaterial({ color: 0x2f3542, roughness: 0.9 });
+    const oreMat = new THREE.MeshStandardMaterial({
+      color: 0xf59e0b,
+      emissive: 0xd97706,
+      emissiveIntensity: 1.8,
+      metalness: 0.8,
+      roughness: 0.3,
+    });
+
+    // 1. Giant Boulder Torso (irregular rocky body)
+    const torso = new THREE.Mesh(new THREE.DodecahedronGeometry(3.6, 1), rockMat);
+    torso.position.y = 4.2;
+    torso.scale.set(1.4, 1.1, 1.2);
+    torso.castShadow = true;
+    torso.receiveShadow = true;
+    group.add(torso);
+
+    // Moss cap on top of torso
+    const mossCap = new THREE.Mesh(new THREE.DodecahedronGeometry(2.4, 1), mossMat);
+    mossCap.position.set(0, 5.4, 0.2);
+    mossCap.scale.set(1.3, 0.5, 1.1);
+    group.add(mossCap);
+
+    // 2. Glowing Ore Deposit Weak Point on top shoulder
+    const oreDeposit = new THREE.Mesh(new THREE.OctahedronGeometry(0.85), oreMat);
+    oreDeposit.position.set(0.8, 6.2, -0.4);
+    oreDeposit.castShadow = true;
+    group.add(oreDeposit);
+
+    const oreLight = new THREE.PointLight(0xf59e0b, 2.5, 10);
+    oreLight.position.set(0.8, 6.4, -0.4);
+    group.add(oreLight);
+
+    // 3. Huge Left Boulder Fist & Arm
+    const armL = new THREE.Group();
+    armL.position.set(-3.6, 4.0, 0);
+    const bicepL = new THREE.Mesh(new THREE.DodecahedronGeometry(1.4, 1), darkRockMat);
+    bicepL.position.y = -0.5;
+    bicepL.castShadow = true;
+    armL.add(bicepL);
+    const fistL = new THREE.Mesh(new THREE.DodecahedronGeometry(1.8, 1), rockMat);
+    fistL.position.set(-0.4, -2.2, 0.4);
+    fistL.castShadow = true;
+    armL.add(fistL);
+    group.add(armL);
+
+    // 4. Huge Right Boulder Fist & Arm
+    const armR = new THREE.Group();
+    armR.position.set(3.6, 4.0, 0);
+    const bicepR = new THREE.Mesh(new THREE.DodecahedronGeometry(1.4, 1), darkRockMat);
+    bicepR.position.y = -0.5;
+    bicepR.castShadow = true;
+    armR.add(bicepR);
+    const fistR = new THREE.Mesh(new THREE.DodecahedronGeometry(1.8, 1), rockMat);
+    fistR.position.set(0.4, -2.2, 0.4);
+    fistR.castShadow = true;
+    armR.add(fistR);
+    group.add(armR);
+
+    // 5. Two Pillar Stone Legs
+    const legL = new THREE.Mesh(new THREE.CylinderGeometry(0.9, 1.2, 2.6, 8), darkRockMat);
+    legL.position.set(-1.8, 1.3, 0);
+    legL.castShadow = true;
+    group.add(legL);
+
+    const legR = new THREE.Mesh(new THREE.CylinderGeometry(0.9, 1.2, 2.6, 8), darkRockMat);
+    legR.position.set(1.8, 1.3, 0);
+    legR.castShadow = true;
+    group.add(legR);
+
+    group.position.set(x, y, z);
+    this.group.add(group);
+
+    const state: EnemyState = {
+      id,
+      type: 'stone_talus',
+      name: 'Iwarok / Stone Talus (MINIBOSS)',
+      position: { x, y, z },
+      rotation: 0,
+      health: 240,
+      maxHealth: 240,
+      level: 8,
+      state: 'PATROL',
+      targetDistance: 999,
+      velocity: { x: 0, y: 0, z: 0 },
+      attackCooldown: 0,
+    };
+
+    this.enemies.push({ state, mesh: group });
+    return group;
   }
 
   /**
@@ -374,20 +480,24 @@ export class EnemyManager {
       state.attackCooldown = Math.max(0, state.attackCooldown - delta);
 
       // State machine logic
-      if (distToPlayer < 22.0) {
+      const isBoss = state.type === 'stone_guardian' || state.type === 'stone_talus';
+      const attackRange = isBoss ? 3.2 : 1.4;
+
+      if (distToPlayer < 24.0) {
         state.state = 'ALERT';
-        if (distToPlayer < 1.4 && state.attackCooldown <= 0) {
+        if (distToPlayer < attackRange && state.attackCooldown <= 0) {
           // Direct physical contact / melee attack damage!
           state.state = 'ATTACK';
-          state.attackCooldown = state.type === 'stone_guardian' ? 2.5 : 1.2;
-          onDamagePlayer(state.type === 'stone_guardian' ? 20 : 10);
+          state.attackCooldown = isBoss ? 2.5 : 1.2;
+          const dmg = state.type === 'stone_talus' ? 24 : state.type === 'stone_guardian' ? 20 : 10;
+          onDamagePlayer(dmg);
           audioEngine.playHitImpact();
-        } else if (distToPlayer >= 1.4) {
+        } else if (distToPlayer >= attackRange) {
           // Chase player
           state.state = 'CHASE';
           const dir = new THREE.Vector3().subVectors(playerPos, ePos).normalize();
           dir.y = 0;
-          const speed = state.type === 'stone_guardian' ? 2.5 : state.type === 'slime' ? 3.2 : state.type === 'goomba' ? 3.8 : 4.0;
+          const speed = state.type === 'stone_talus' ? 2.0 : state.type === 'stone_guardian' ? 2.5 : state.type === 'slime' ? 3.2 : state.type === 'goomba' ? 3.8 : 4.0;
 
           state.position.x += dir.x * speed * delta;
           state.position.z += dir.z * speed * delta;
@@ -397,13 +507,14 @@ export class EnemyManager {
         }
       } else {
         state.state = 'PATROL';
+        state.position.y = TerrainManager.getTerrainHeight(state.position.x, state.position.z);
       }
 
       // Sync mesh
       mesh.position.set(state.position.x, state.position.y, state.position.z);
       mesh.rotation.y = state.rotation;
 
-      // Slime bounce animation
+      // Special animations per enemy type
       if (state.type === 'slime') {
         const bounce = Math.abs(Math.sin(Date.now() * 0.006)) * 0.4;
         mesh.position.y += bounce;
@@ -411,6 +522,24 @@ export class EnemyManager {
         const waddle = Math.sin(Date.now() * 0.012) * 0.2;
         mesh.rotation.z = waddle * 0.15;
         mesh.position.y += Math.abs(Math.sin(Date.now() * 0.012)) * 0.08;
+      } else if (state.type === 'stone_talus') {
+        // Heavy lumbering stomp strides for giant rock golem
+        const lumber = Math.sin(Date.now() * 0.0035);
+        mesh.rotation.z = lumber * 0.08;
+        mesh.position.y += Math.abs(lumber) * 0.2;
+      }
+    }
+  }
+
+  /**
+   * Synchronize all living enemies directly to terrain surface
+   */
+  public syncAllEnemiesToTerrain() {
+    for (const e of this.enemies) {
+      if (e.state.state !== 'DEAD') {
+        const ny = TerrainManager.getTerrainHeight(e.state.position.x, e.state.position.z);
+        e.state.position.y = ny;
+        e.mesh.position.y = ny;
       }
     }
   }
@@ -419,7 +548,8 @@ export class EnemyManager {
     const list: ObstacleCollider[] = [];
     this.enemies.forEach((item) => {
       if (item.state.state === 'DEAD') return;
-      const isBoss = item.state.type === 'stone_guardian';
+      const isGuardian = item.state.type === 'stone_guardian';
+      const isTalus = item.state.type === 'stone_talus';
       const isSlime = item.state.type === 'slime';
       list.push({
         id: item.state.id,
@@ -427,8 +557,8 @@ export class EnemyManager {
         x: item.state.position.x,
         z: item.state.position.z,
         yBase: item.state.position.y,
-        height: isBoss ? 7.0 : isSlime ? 1.4 : 2.0,
-        radius: isBoss ? 2.8 : isSlime ? 0.9 : 0.8,
+        height: isTalus ? 6.5 : isGuardian ? 7.0 : isSlime ? 1.4 : 2.0,
+        radius: isTalus ? 3.2 : isGuardian ? 2.8 : isSlime ? 0.9 : 0.8,
       });
     });
     return list;

@@ -3,6 +3,9 @@ import { BuildingStructure, ObstacleCollider } from '../types';
 import { TerrainManager } from './Terrain';
 import { audioEngine } from './AudioEngine';
 
+export type RoadMaterialType = 'asphalt' | 'cobblestone' | 'wood' | 'dirt' | 'sheikah_neon';
+export type RoadWallType = 'racing_wall' | 'stone_wall' | 'wood_fence' | 'curbs_only' | 'none';
+
 export class BuildingSystem {
   public group: THREE.Group = new THREE.Group();
   public structures: { data: BuildingStructure; mesh: THREE.Group }[] = [];
@@ -153,6 +156,36 @@ export class BuildingSystem {
     return { success: true, message: `Gebäude platziert!` };
   }
 
+  /**
+   * Directly place building at coordinates (used by Level Editor)
+   */
+  public placeBuildingAt(type: string, pos: THREE.Vector3, rotY: number = 0): THREE.Group {
+    const group = this.createStructureMesh(type, false);
+    group.position.copy(pos);
+    group.rotation.y = rotY;
+
+    this.group.add(group);
+
+    const data: BuildingStructure = {
+      id: `struct_${Math.random().toString(36).substring(2, 9)}`,
+      type,
+      position: { x: pos.x, y: pos.y, z: pos.z },
+      rotationY: rotY,
+      health: 200,
+      maxHealth: 200,
+    };
+
+    this.structures.push({ data, mesh: group });
+    this.registerStructureObstacle(data);
+
+    if (this.onStructurePlaced) {
+      this.onStructurePlaced(data.position, data.type);
+    }
+
+    this.saveBuiltStructures();
+    return group;
+  }
+
   private buildInteriorFurniture(group: THREE.Group, houseType: string) {
     const isCity = houseType === 'catan_city';
     const randStyle = Math.floor(Math.random() * 3); // 0, 1, 2
@@ -294,6 +327,10 @@ export class BuildingSystem {
    * Build realistic 3D structure models (AAA Fantasy aesthetics)
    */
   private createStructureMesh(type: string, isHologram: boolean): THREE.Group {
+    if (type.startsWith('road_')) {
+      return this.createCustomRoadMesh(type, isHologram);
+    }
+
     const group = new THREE.Group();
     const woodMat = isHologram ? this.hologramMaterial : this.matWoodPlanks;
     const logMat = isHologram ? this.hologramMaterial : this.matLogDark;
@@ -687,6 +724,850 @@ export class BuildingSystem {
         }
         break;
       }
+
+      case 'windmill': {
+        // 🌾 Grand Windmill with Animated Spinning Sails
+        // 1. Cobblestone Masonry Base
+        const baseCol = new THREE.Mesh(new THREE.CylinderGeometry(2.2, 2.8, 6.0, 12), stoneMat);
+        baseCol.position.y = 3.0;
+        baseCol.castShadow = true;
+        baseCol.receiveShadow = true;
+        group.add(baseCol);
+
+        // 2. Upper Wooden Tower Section
+        const woodUpper = new THREE.Mesh(new THREE.CylinderGeometry(1.8, 2.2, 3.2, 10), woodMat);
+        woodUpper.position.y = 7.4;
+        woodUpper.castShadow = true;
+        group.add(woodUpper);
+
+        // 3. Conical Shingle Roof
+        const roof = new THREE.Mesh(new THREE.ConeGeometry(2.4, 2.2, 10), roofMat);
+        roof.position.y = 10.0;
+        roof.castShadow = true;
+        group.add(roof);
+
+        // 4. Wooden Entrance Door
+        const door = new THREE.Mesh(new THREE.BoxGeometry(1.2, 2.2, 0.3), logMat);
+        door.position.set(0, 1.1, 2.7);
+        group.add(door);
+
+        // 5. Rotor Hub & Spinning Sails
+        const rotorHub = new THREE.Group();
+        rotorHub.name = 'WindmillRotor';
+        rotorHub.position.set(0, 7.8, 2.1); // Front face of windmill
+
+        // Central Axle Cap
+        const axle = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.35, 0.6, 8), ironMat);
+        axle.rotation.x = Math.PI / 2;
+        rotorHub.add(axle);
+
+        const sailClothMat = isHologram
+          ? this.hologramMaterial
+          : new THREE.MeshStandardMaterial({ color: 0xf5eedb, roughness: 0.85, side: THREE.DoubleSide });
+
+        // 4 Sail Arms in Cross Formation
+        for (let a = 0; a < 4; a++) {
+          const armGroup = new THREE.Group();
+          armGroup.rotation.z = (a * Math.PI) / 2;
+
+          // Wooden Spar / Lattice Arm
+          const spar = new THREE.Mesh(new THREE.BoxGeometry(0.12, 4.4, 0.12), logMat);
+          spar.position.y = 2.2;
+          spar.castShadow = true;
+          armGroup.add(spar);
+
+          // White Canvas Sail
+          const sail = new THREE.Mesh(new THREE.BoxGeometry(0.9, 3.6, 0.04), sailClothMat);
+          sail.position.set(0.48, 2.4, 0.05);
+          sail.castShadow = true;
+          armGroup.add(sail);
+
+          rotorHub.add(armGroup);
+        }
+
+        group.add(rotorHub);
+        break;
+      }
+
+      case 'watchtower': {
+        // 🏰 Timber Watchtower (Lookout Post)
+        // 4 Angled Log Corner Pillars (7m high)
+        const pillarDist = 1.4;
+        const corners = [
+          { x: -pillarDist, z: -pillarDist },
+          { x: pillarDist, z: -pillarDist },
+          { x: -pillarDist, z: pillarDist },
+          { x: pillarDist, z: pillarDist },
+        ];
+
+        corners.forEach((c) => {
+          const p = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.22, 6.8, 8), logMat);
+          p.position.set(c.x, 3.4, c.z);
+          p.castShadow = true;
+          group.add(p);
+        });
+
+        // Cross Braces
+        const brace1 = new THREE.Mesh(new THREE.BoxGeometry(3.0, 0.12, 0.12), woodMat);
+        brace1.position.set(0, 2.4, pillarDist);
+        group.add(brace1);
+        const brace2 = brace1.clone();
+        brace2.position.set(0, 2.4, -pillarDist);
+        group.add(brace2);
+
+        // Observation Deck Floor Platform at y = 5.6
+        const deck = new THREE.Mesh(new THREE.BoxGeometry(3.6, 0.25, 3.6), woodMat);
+        deck.position.y = 5.6;
+        deck.castShadow = true;
+        deck.receiveShadow = true;
+        group.add(deck);
+
+        // Deck Guard Railing
+        const railFront = new THREE.Mesh(new THREE.BoxGeometry(3.6, 0.15, 0.1), logMat);
+        railFront.position.set(0, 6.6, 1.75);
+        group.add(railFront);
+        const railBack = railFront.clone();
+        railBack.position.set(0, 6.6, -1.75);
+        group.add(railBack);
+        const railLeft = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.15, 3.6), logMat);
+        railLeft.position.set(-1.75, 6.6, 0);
+        group.add(railLeft);
+        const railRight = railLeft.clone();
+        railRight.position.set(1.75, 6.6, 0);
+        group.add(railRight);
+
+        // Deck Roof Pillars & Canopy
+        corners.forEach((c) => {
+          const roofP = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 2.2, 6), logMat);
+          roofP.position.set(c.x * 1.05, 6.7, c.z * 1.05);
+          group.add(roofP);
+        });
+
+        const watchRoof = new THREE.Mesh(new THREE.ConeGeometry(3.0, 1.8, 4), roofMat);
+        watchRoof.rotation.y = Math.PI / 4;
+        watchRoof.position.y = 8.5;
+        watchRoof.castShadow = true;
+        group.add(watchRoof);
+
+        // Lookout Lantern
+        if (!isHologram) {
+          const lGlow = new THREE.Mesh(new THREE.SphereGeometry(0.18, 8, 8), new THREE.MeshBasicMaterial({ color: 0xf59e0b }));
+          lGlow.position.set(0, 7.3, 0);
+          group.add(lGlow);
+
+          const light = new THREE.PointLight(0xf59e0b, 2.2, 10);
+          light.position.set(0, 7.3, 0);
+          group.add(light);
+        }
+        break;
+      }
+
+      case 'stone_well': {
+        // 💧 Village Stone Water Well with Canopy & Bucket
+        // Circular Cobblestone Well Basin
+        const rim = new THREE.Mesh(new THREE.CylinderGeometry(1.4, 1.5, 1.0, 12), stoneMat);
+        rim.position.y = 0.5;
+        rim.castShadow = true;
+        rim.receiveShadow = true;
+        group.add(rim);
+
+        // Dark Water Surface inside
+        const waterMat = new THREE.MeshStandardMaterial({
+          color: 0x0284c7,
+          roughness: 0.1,
+          metalness: 0.8,
+        });
+        const water = new THREE.Mesh(new THREE.CircleGeometry(1.2, 12), waterMat);
+        water.rotation.x = -Math.PI / 2;
+        water.position.y = 0.6;
+        group.add(water);
+
+        // Twin Wooden Roof Posts
+        const postL = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 2.6, 8), logMat);
+        postL.position.set(-1.25, 1.7, 0);
+        postL.castShadow = true;
+        group.add(postL);
+
+        const postR = postL.clone();
+        postR.position.set(1.25, 1.7, 0);
+        group.add(postR);
+
+        // Crossbeam & Winch Drum
+        const winch = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.14, 2.4, 8), logMat);
+        winch.rotation.z = Math.PI / 2;
+        winch.position.set(0, 2.3, 0);
+        group.add(winch);
+
+        // Rope & Hanging Bucket
+        const rope = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 1.1), woodMat);
+        rope.position.set(0, 1.7, 0);
+        group.add(rope);
+
+        const bucket = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.18, 0.38, 8), woodMat);
+        bucket.position.set(0, 1.0, 0);
+        bucket.castShadow = true;
+        group.add(bucket);
+
+        // Wooden Gable Roof
+        const wellRoof = new THREE.Mesh(new THREE.ConeGeometry(2.1, 1.2, 4), roofMat);
+        wellRoof.rotation.y = Math.PI / 4;
+        wellRoof.position.y = 3.3;
+        wellRoof.castShadow = true;
+        group.add(wellRoof);
+        break;
+      }
+
+      case 'lantern_post': {
+        // 🏮 Medieval Wrought Iron Lamppost with Amber Point Light
+        // Iron Base & Tall Fluted Column
+        const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.15, 3.2, 8), ironMat);
+        pole.position.y = 1.6;
+        pole.castShadow = true;
+        group.add(pole);
+
+        // Curved Decorative Bracket Arm
+        const arm = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.12, 0.12), ironMat);
+        arm.position.set(0.35, 3.1, 0);
+        group.add(arm);
+
+        // Lantern Housing
+        const lanternGeo = new THREE.CylinderGeometry(0.26, 0.18, 0.55, 6);
+        const lanternMesh = new THREE.Mesh(lanternGeo, ironMat);
+        lanternMesh.position.set(0.65, 2.8, 0);
+        lanternMesh.castShadow = true;
+        group.add(lanternMesh);
+
+        // Amber Glowing Filament Core & Dynamic Point Light
+        const glowMat = new THREE.MeshStandardMaterial({
+          color: 0xf59e0b,
+          emissive: 0xd97706,
+          emissiveIntensity: 2.5,
+        });
+        const glowCore = new THREE.Mesh(new THREE.SphereGeometry(0.14, 8, 8), glowMat);
+        glowCore.position.set(0.65, 2.8, 0);
+        group.add(glowCore);
+
+        if (!isHologram) {
+          const light = new THREE.PointLight(0xf59e0b, 2.8, 14);
+          light.position.set(0.65, 2.8, 0);
+          group.add(light);
+        }
+        break;
+      }
+
+      case 'camp_tent': {
+        // ⛺ Adventurer Camp Tent (Canvas A-Frame Shelter)
+        const canvasMat = isHologram
+          ? this.hologramMaterial
+          : new THREE.MeshStandardMaterial({ color: 0xd6c4a8, roughness: 0.85, side: THREE.DoubleSide });
+
+        // Left Slanted Canvas Flap
+        const flapL = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.08, 3.2), canvasMat);
+        flapL.position.set(-0.85, 1.1, 0);
+        flapL.rotation.z = Math.PI / 4;
+        flapL.castShadow = true;
+        flapL.receiveShadow = true;
+        group.add(flapL);
+
+        // Right Slanted Canvas Flap
+        const flapR = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.08, 3.2), canvasMat);
+        flapR.position.set(0.85, 1.1, 0);
+        flapR.rotation.z = -Math.PI / 4;
+        flapR.castShadow = true;
+        flapR.receiveShadow = true;
+        group.add(flapR);
+
+        // Ridge Pole
+        const ridge = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 3.4), logMat);
+        ridge.rotation.x = Math.PI / 2;
+        ridge.position.set(0, 1.95, 0);
+        group.add(ridge);
+
+        // Inside Rolled Bedroll & Straw Mat
+        const bedMat = new THREE.MeshStandardMaterial({ color: 0x991b1b, roughness: 0.7 });
+        const bed = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.15, 2.2), bedMat);
+        bed.position.set(0, 0.08, 0);
+        group.add(bed);
+
+        const pillow = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 1.0, 8), canvasMat);
+        pillow.rotation.z = Math.PI / 2;
+        pillow.position.set(0, 0.2, -0.85);
+        group.add(pillow);
+        break;
+      }
+
+      case 'barrel_stack': {
+        // 🛢️ Stack of 3 Oak Wood Barrels with Iron Hoops
+        const barrelGeo = new THREE.CylinderGeometry(0.38, 0.38, 0.85, 10);
+
+        // Bottom Left Barrel
+        const b1 = new THREE.Mesh(barrelGeo, woodMat);
+        b1.position.set(-0.4, 0.42, 0);
+        b1.castShadow = true;
+        group.add(b1);
+
+        // Bottom Right Barrel
+        const b2 = new THREE.Mesh(barrelGeo, woodMat);
+        b2.position.set(0.4, 0.42, 0);
+        b2.castShadow = true;
+        group.add(b2);
+
+        // Top Centered Barrel (lying sideways)
+        const b3 = new THREE.Mesh(barrelGeo, woodMat);
+        b3.rotation.z = Math.PI / 2;
+        b3.position.set(0, 1.15, 0);
+        b3.castShadow = true;
+        group.add(b3);
+
+        // Decorative Iron Hoops on b1 & b2
+        const hoopGeo = new THREE.TorusGeometry(0.39, 0.03, 6, 12);
+        hoopGeo.rotateX(Math.PI / 2);
+        const h1 = new THREE.Mesh(hoopGeo, ironMat);
+        h1.position.set(-0.4, 0.6, 0);
+        group.add(h1);
+        const h2 = new THREE.Mesh(hoopGeo, ironMat);
+        h2.position.set(0.4, 0.6, 0);
+        group.add(h2);
+        break;
+      }
+
+      case 'crate_wooden': {
+        // 📦 Sturdy Reinforced Wooden Storage Crate
+        const crate = new THREE.Mesh(new THREE.BoxGeometry(1.2, 1.2, 1.2), woodMat);
+        crate.position.y = 0.6;
+        crate.castShadow = true;
+        crate.receiveShadow = true;
+        group.add(crate);
+
+        // Iron Corner Brackets & Trim
+        const trimMat = ironMat;
+        const topRim = new THREE.Mesh(new THREE.BoxGeometry(1.26, 0.08, 1.26), trimMat);
+        topRim.position.y = 1.18;
+        group.add(topRim);
+
+        const botRim = new THREE.Mesh(new THREE.BoxGeometry(1.26, 0.08, 1.26), trimMat);
+        botRim.position.y = 0.06;
+        group.add(botRim);
+        break;
+      }
+
+      case 'target_dummy': {
+        // 🎯 Archery & Sword Practice Training Dummy
+        // Cross Wooden Base Stand
+        const baseWood = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.12, 1.2), woodMat);
+        baseWood.position.y = 0.06;
+        group.add(baseWood);
+
+        // Central Vertical Wooden Post
+        const post = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 2.1, 8), logMat);
+        post.position.y = 1.05;
+        post.castShadow = true;
+        group.add(post);
+
+        // Cross Horizontal Arm Bar
+        const arms = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.14, 0.14), logMat);
+        arms.position.y = 1.5;
+        group.add(arms);
+
+        // Straw / Burlap Torso
+        const strawMat = new THREE.MeshStandardMaterial({ color: 0xd97706, roughness: 0.9 });
+        const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.36, 0.3, 0.85, 8), strawMat);
+        torso.position.y = 1.35;
+        torso.castShadow = true;
+        group.add(torso);
+
+        // Straw Head with Red Bandana
+        const head = new THREE.Mesh(new THREE.SphereGeometry(0.25, 8, 8), strawMat);
+        head.position.y = 1.95;
+        head.castShadow = true;
+        group.add(head);
+
+        const bandana = new THREE.Mesh(new THREE.TorusGeometry(0.24, 0.04, 6, 10), roofMat);
+        bandana.rotation.x = Math.PI / 2;
+        bandana.position.y = 1.95;
+        group.add(bandana);
+
+        // Target Bullseye on Chest
+        const bullseyeMat = new THREE.MeshBasicMaterial({ color: 0xef4444 });
+        const ring = new THREE.Mesh(new THREE.RingGeometry(0.12, 0.22, 12), bullseyeMat);
+        ring.position.set(0, 1.35, 0.37);
+        group.add(ring);
+        break;
+      }
+
+      case 'walled_road': {
+        // 🛣️ Paved Walled Road / Circuit Track with High Boundary Walls
+        // 1. Central Asphalt Roadbed (4.6m wide x 3.2m long x 0.16m high)
+        const roadbedMat = isHologram
+          ? this.hologramMaterial
+          : new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.85 });
+        const roadbed = new THREE.Mesh(new THREE.BoxGeometry(4.6, 0.16, 3.2), roadbedMat);
+        roadbed.position.y = 0.08;
+        roadbed.castShadow = true;
+        roadbed.receiveShadow = true;
+        group.add(roadbed);
+
+        // Center dashed road stripe
+        const stripeMat = isHologram
+          ? this.hologramMaterial
+          : new THREE.MeshStandardMaterial({ color: 0xfbbf24, roughness: 0.5 });
+        const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.02, 1.8), stripeMat);
+        stripe.position.set(0, 0.17, 0);
+        group.add(stripe);
+
+        // 2. Left Boundary Wall / Curb (x = -2.3, height = 1.25m)
+        const wallMat = isHologram
+          ? this.hologramMaterial
+          : new THREE.MeshStandardMaterial({ color: 0x64748b, roughness: 0.75 });
+        const wallTrimMat = isHologram
+          ? this.hologramMaterial
+          : new THREE.MeshStandardMaterial({ color: 0xb91c1c, roughness: 0.6 });
+
+        const wallL = new THREE.Mesh(new THREE.BoxGeometry(0.35, 1.25, 3.2), wallMat);
+        wallL.position.set(-2.3, 0.625, 0);
+        wallL.castShadow = true;
+        wallL.receiveShadow = true;
+        group.add(wallL);
+
+        // Left Wall Curb Cap (Red Racing Trim)
+        const curbCapL = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.15, 3.2), wallTrimMat);
+        curbCapL.position.set(-2.3, 1.28, 0);
+        curbCapL.castShadow = true;
+        group.add(curbCapL);
+
+        // 3. Right Boundary Wall / Curb (x = +2.3, height = 1.25m)
+        const wallR = new THREE.Mesh(new THREE.BoxGeometry(0.35, 1.25, 3.2), wallMat);
+        wallR.position.set(2.3, 0.625, 0);
+        wallR.castShadow = true;
+        wallR.receiveShadow = true;
+        group.add(wallR);
+
+        // Right Wall Curb Cap (White Racing Trim)
+        const curbCapRMat = isHologram
+          ? this.hologramMaterial
+          : new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.6 });
+        const curbCapR = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.15, 3.2), curbCapRMat);
+        curbCapR.position.set(2.3, 1.28, 0);
+        curbCapR.castShadow = true;
+        group.add(curbCapR);
+        break;
+      }
+
+      case 'track_start_gate': {
+        // 🏁 Monumental Start/Finish Archway across Track
+        // 1. Roadbed underneath
+        const roadbed = new THREE.Mesh(new THREE.BoxGeometry(5.2, 0.16, 3.6), stoneMat);
+        roadbed.position.y = 0.08;
+        roadbed.receiveShadow = true;
+        group.add(roadbed);
+
+        // 2. Checkered Start Line Stripe
+        const startStripeMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.4 });
+        const startStripe = new THREE.Mesh(new THREE.BoxGeometry(4.6, 0.02, 0.6), startStripeMat);
+        startStripe.position.set(0, 0.17, 0);
+        group.add(startStripe);
+
+        // 3. Left Stone Column Tower
+        const towerL = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.7, 5.2, 8), stoneMat);
+        towerL.position.set(-2.6, 2.6, 0);
+        towerL.castShadow = true;
+        group.add(towerL);
+
+        // 4. Right Stone Column Tower
+        const towerR = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.7, 5.2, 8), stoneMat);
+        towerR.position.set(2.6, 2.6, 0);
+        towerR.castShadow = true;
+        group.add(towerR);
+
+        // 5. Overhead Wooden Banner Arch Crossbeam
+        const beam = new THREE.Mesh(new THREE.BoxGeometry(6.2, 0.8, 0.4), logMat);
+        beam.position.set(0, 5.0, 0);
+        beam.castShadow = true;
+        group.add(beam);
+
+        // Banner Sign (START / ZIEL)
+        const bannerMat = new THREE.MeshStandardMaterial({ color: 0xd97706, roughness: 0.5 });
+        const banner = new THREE.Mesh(new THREE.BoxGeometry(4.0, 0.6, 0.08), bannerMat);
+        banner.position.set(0, 5.0, 0.22);
+        group.add(banner);
+
+        // Braziers / Torches on towers with warm lights
+        if (!isHologram) {
+          const torchMat = new THREE.MeshBasicMaterial({ color: 0xf97316 });
+          const flameL = new THREE.Mesh(new THREE.SphereGeometry(0.2, 8, 8), torchMat);
+          flameL.position.set(-2.6, 5.4, 0);
+          group.add(flameL);
+
+          const lightL = new THREE.PointLight(0xf97316, 2.2, 10);
+          lightL.position.set(-2.6, 5.4, 0);
+          group.add(lightL);
+
+          const flameR = new THREE.Mesh(new THREE.SphereGeometry(0.2, 8, 8), torchMat);
+          flameR.position.set(2.6, 5.4, 0);
+          group.add(flameR);
+
+          const lightR = new THREE.PointLight(0xf97316, 2.2, 10);
+          lightR.position.set(2.6, 5.4, 0);
+          group.add(lightR);
+        }
+        break;
+      }
+
+      case 'track_finish_gate': {
+        // 🏁 Monumental Finish Archway across Track with Checkered Banner and Golden Victory Trim
+        // Roadbed underneath
+        const roadbed = new THREE.Mesh(new THREE.BoxGeometry(5.2, 0.16, 3.6), stoneMat);
+        roadbed.position.y = 0.08;
+        roadbed.receiveShadow = true;
+        group.add(roadbed);
+
+        // Checkered Finish Line Stripe
+        const finishStripeMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.3 });
+        const finishStripe = new THREE.Mesh(new THREE.BoxGeometry(4.6, 0.02, 0.7), finishStripeMat);
+        finishStripe.position.set(0, 0.17, 0);
+        group.add(finishStripe);
+
+        // Black checkered blocks on the white stripe
+        const blackMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.4 });
+        for (let bx = -2.0; bx <= 2.0; bx += 0.8) {
+          const cb = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.025, 0.35), blackMat);
+          cb.position.set(bx, 0.175, 0.175);
+          group.add(cb);
+          const cb2 = cb.clone();
+          cb2.position.set(bx + 0.4, 0.175, -0.175);
+          group.add(cb2);
+        }
+
+        // Left & Right Marble Pillar Towers
+        const marbleMat = new THREE.MeshStandardMaterial({ color: 0xf1f5f9, roughness: 0.3, metalness: 0.1 });
+        const towerL = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.7, 5.2, 10), marbleMat);
+        towerL.position.set(-2.6, 2.6, 0);
+        towerL.castShadow = true;
+        group.add(towerL);
+
+        const towerR = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.7, 5.2, 10), marbleMat);
+        towerR.position.set(2.6, 2.6, 0);
+        towerR.castShadow = true;
+        group.add(towerR);
+
+        // Gold Trim Cap on Towers
+        const goldMat = new THREE.MeshStandardMaterial({ color: 0xf59e0b, metalness: 0.9, roughness: 0.2 });
+        const goldCapL = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.6, 0.4, 10), goldMat);
+        goldCapL.position.set(-2.6, 5.3, 0);
+        group.add(goldCapL);
+
+        const goldCapR = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.6, 0.4, 10), goldMat);
+        goldCapR.position.set(2.6, 5.3, 0);
+        group.add(goldCapR);
+
+        // Golden Victory Trophies on top
+        const trophyGeo = new THREE.OctahedronGeometry(0.35);
+        const trophyL = new THREE.Mesh(trophyGeo, goldMat);
+        trophyL.position.set(-2.6, 5.75, 0);
+        group.add(trophyL);
+
+        const trophyR = new THREE.Mesh(trophyGeo, goldMat);
+        trophyR.position.set(2.6, 5.75, 0);
+        group.add(trophyR);
+
+        // Overhead Grand Arch Crossbeam
+        const beam = new THREE.Mesh(new THREE.BoxGeometry(6.4, 0.9, 0.45), marbleMat);
+        beam.position.set(0, 5.0, 0);
+        beam.castShadow = true;
+        group.add(beam);
+
+        // Checkered Finish Banner (ZIEL)
+        const bannerMat = new THREE.MeshStandardMaterial({ color: 0x10b981, roughness: 0.4 });
+        const banner = new THREE.Mesh(new THREE.BoxGeometry(4.2, 0.7, 0.08), bannerMat);
+        banner.position.set(0, 5.0, 0.25);
+        group.add(banner);
+
+        // Sparkling Victory Lights
+        if (!isHologram) {
+          const lightL = new THREE.PointLight(0x10b981, 3.0, 12);
+          lightL.position.set(-2.6, 5.5, 0);
+          group.add(lightL);
+
+          const lightR = new THREE.PointLight(0x10b981, 3.0, 12);
+          lightR.position.set(2.6, 5.5, 0);
+          group.add(lightR);
+        }
+        break;
+      }
+    }
+
+    return group;
+  }
+
+  /**
+   * Procedural road piece with selectable surface material & boundary wall style
+   */
+  public createCustomRoadMesh(
+    typeOrMat: string,
+    isHologram: boolean = false,
+    customWidth: number = 5.0,
+    customLength: number = 3.2
+  ): THREE.Group {
+    const group = new THREE.Group();
+
+    // Parse 'road_{material}_{wall}'
+    let material: RoadMaterialType = 'asphalt';
+    let wall: RoadWallType = 'racing_wall';
+
+    if (typeOrMat.startsWith('road_')) {
+      const rest = typeOrMat.substring(5);
+      const mats: RoadMaterialType[] = ['asphalt', 'cobblestone', 'wood', 'dirt', 'sheikah_neon'];
+      for (const m of mats) {
+        if (rest.startsWith(m + '_')) {
+          material = m;
+          wall = rest.substring(m.length + 1) as RoadWallType;
+          break;
+        }
+      }
+    }
+
+    const width = customWidth;
+    const length = customLength;
+    const halfW = width * 0.5;
+
+    if (isHologram) {
+      const bed = new THREE.Mesh(new THREE.BoxGeometry(width, 0.16, length), this.hologramMaterial);
+      bed.position.y = 0.08;
+      group.add(bed);
+
+      if (wall !== 'none') {
+        const wallH = wall === 'curbs_only' ? 0.25 : 1.25;
+        const wL = new THREE.Mesh(new THREE.BoxGeometry(0.35, wallH, length), this.hologramMaterial);
+        wL.position.set(-halfW, wallH * 0.5, 0);
+        group.add(wL);
+
+        const wR = new THREE.Mesh(new THREE.BoxGeometry(0.35, wallH, length), this.hologramMaterial);
+        wR.position.set(halfW, wallH * 0.5, 0);
+        group.add(wR);
+      }
+      return group;
+    }
+
+    // --- 1. Roadbed Surface Material ---
+    let roadMat: THREE.Material;
+    if (material === 'asphalt') {
+      roadMat = new THREE.MeshStandardMaterial({ color: 0x222a35, roughness: 0.82, metalness: 0.05 });
+    } else if (material === 'cobblestone') {
+      roadMat = new THREE.MeshStandardMaterial({ color: 0x57606e, roughness: 0.92, metalness: 0.02 });
+    } else if (material === 'wood') {
+      roadMat = new THREE.MeshStandardMaterial({ color: 0x78350f, roughness: 0.78, metalness: 0.0 });
+    } else if (material === 'dirt') {
+      roadMat = new THREE.MeshStandardMaterial({ color: 0x854d0e, roughness: 0.95, metalness: 0.0 });
+    } else {
+      // Sheikah Neon
+      roadMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.35, metalness: 0.2 });
+    }
+
+    const roadbed = new THREE.Mesh(new THREE.BoxGeometry(width, 0.16, length), roadMat);
+    roadbed.position.y = 0.08;
+    roadbed.castShadow = true;
+    roadbed.receiveShadow = true;
+    group.add(roadbed);
+
+    // --- 2. Material-Specific Surface Details ---
+    if (material === 'asphalt') {
+      // Dashed yellow/white centerline
+      const lineMat = new THREE.MeshStandardMaterial({ color: 0xfbbf24, roughness: 0.45 });
+      const line = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.02, length * 0.6), lineMat);
+      line.position.set(0, 0.17, 0);
+      group.add(line);
+
+      // Edge tire ruts / rubber markings
+      const skidMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.9 });
+      const skidL = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.005, length), skidMat);
+      skidL.position.set(-halfW * 0.5, 0.165, 0);
+      group.add(skidL);
+      const skidR = skidL.clone();
+      skidR.position.set(halfW * 0.5, 0.165, 0);
+      group.add(skidR);
+    } else if (material === 'cobblestone') {
+      // Medieval paving flagstones & center curb
+      const blockMat = new THREE.MeshStandardMaterial({ color: 0x64748b, roughness: 0.85 });
+      const darkJointMat = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.95 });
+
+      for (let zOff = -length * 0.35; zOff <= length * 0.35; zOff += length * 0.35) {
+        const joint = new THREE.Mesh(new THREE.BoxGeometry(width * 0.96, 0.015, 0.08), darkJointMat);
+        joint.position.set(0, 0.17, zOff);
+        group.add(joint);
+      }
+      const centerSpine = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.02, length), blockMat);
+      centerSpine.position.set(0, 0.17, 0);
+      group.add(centerSpine);
+    } else if (material === 'wood') {
+      // Heavy timber sleepers and iron bolt heads
+      const beamMat = new THREE.MeshStandardMaterial({ color: 0x451a03, roughness: 0.85 });
+      const ironBoltMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, metalness: 0.8, roughness: 0.3 });
+
+      for (let zOff = -length * 0.35; zOff <= length * 0.35; zOff += length * 0.35) {
+        const sleeper = new THREE.Mesh(new THREE.BoxGeometry(width * 1.02, 0.03, 0.28), beamMat);
+        sleeper.position.set(0, 0.175, zOff);
+        sleeper.castShadow = true;
+        group.add(sleeper);
+
+        const boltL = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.04, 6), ironBoltMat);
+        boltL.position.set(-halfW + 0.2, 0.19, zOff);
+        group.add(boltL);
+        const boltR = boltL.clone();
+        boltR.position.set(halfW - 0.2, 0.19, zOff);
+        group.add(boltR);
+      }
+    } else if (material === 'dirt') {
+      // Sandy gravel tracks with dual dirt ruts
+      const rutMat = new THREE.MeshStandardMaterial({ color: 0x573108, roughness: 0.98 });
+      const rutL = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.015, length), rutMat);
+      rutL.position.set(-halfW * 0.45, 0.165, 0);
+      group.add(rutL);
+      const rutR = rutL.clone();
+      rutR.position.set(halfW * 0.45, 0.165, 0);
+      group.add(rutR);
+    } else if (material === 'sheikah_neon') {
+      // Glowing Sheikah energy glyph central rail
+      const neonMat = new THREE.MeshStandardMaterial({
+        color: 0x00f0ff,
+        emissive: 0x00e5ff,
+        emissiveIntensity: 2.4,
+        roughness: 0.1,
+      });
+      const neonCore = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.025, length), neonMat);
+      neonCore.position.set(0, 0.175, 0);
+      group.add(neonCore);
+
+      const edgeNeonL = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.02, length), neonMat);
+      edgeNeonL.position.set(-halfW + 0.2, 0.175, 0);
+      group.add(edgeNeonL);
+      const edgeNeonR = edgeNeonL.clone();
+      edgeNeonR.position.set(halfW - 0.2, 0.175, 0);
+      group.add(edgeNeonR);
+    }
+
+    // --- 3. Boundary Walls & Obstacles ---
+    if (wall === 'racing_wall') {
+      // 1.25m tall crash barrier with Red-White Racing Curbs & Steel Top Guardrail
+      const barrierMat = new THREE.MeshStandardMaterial({ color: 0x64748b, roughness: 0.75 });
+      const redTrimMat = new THREE.MeshStandardMaterial({ color: 0xdc2626, roughness: 0.5 });
+      const whiteTrimMat = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.5 });
+      const railMat = new THREE.MeshStandardMaterial({ color: 0x94a3b8, metalness: 0.75, roughness: 0.3 });
+
+      // Left Wall
+      const wallL = new THREE.Mesh(new THREE.BoxGeometry(0.35, 1.25, length), barrierMat);
+      wallL.position.set(-halfW, 0.625, 0);
+      wallL.castShadow = true;
+      wallL.receiveShadow = true;
+      group.add(wallL);
+
+      const curbL = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.16, length), redTrimMat);
+      curbL.position.set(-halfW, 1.28, 0);
+      curbL.castShadow = true;
+      group.add(curbL);
+
+      const guardrailL = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, length, 8), railMat);
+      guardrailL.rotation.x = Math.PI / 2;
+      guardrailL.position.set(-halfW + 0.12, 0.85, 0);
+      group.add(guardrailL);
+
+      // Right Wall
+      const wallR = new THREE.Mesh(new THREE.BoxGeometry(0.35, 1.25, length), barrierMat);
+      wallR.position.set(halfW, 0.625, 0);
+      wallR.castShadow = true;
+      wallR.receiveShadow = true;
+      group.add(wallR);
+
+      const curbR = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.16, length), whiteTrimMat);
+      curbR.position.set(halfW, 1.28, 0);
+      curbR.castShadow = true;
+      group.add(curbR);
+
+      const guardrailR = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, length, 8), railMat);
+      guardrailR.rotation.x = Math.PI / 2;
+      guardrailR.position.set(halfW - 0.12, 0.85, 0);
+      group.add(guardrailR);
+    } else if (wall === 'stone_wall') {
+      // 1.25m tall Natural Stone Wall with Coping Stones
+      const stoneWallMat = new THREE.MeshStandardMaterial({ color: 0x475569, roughness: 0.88 });
+      const capMat = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.8 });
+
+      // Left Wall
+      const wallL = new THREE.Mesh(new THREE.BoxGeometry(0.4, 1.25, length), stoneWallMat);
+      wallL.position.set(-halfW, 0.625, 0);
+      wallL.castShadow = true;
+      wallL.receiveShadow = true;
+      group.add(wallL);
+
+      const capL = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.14, length), capMat);
+      capL.position.set(-halfW, 1.28, 0);
+      capL.castShadow = true;
+      group.add(capL);
+
+      // Right Wall
+      const wallR = new THREE.Mesh(new THREE.BoxGeometry(0.4, 1.25, length), stoneWallMat);
+      wallR.position.set(halfW, 0.625, 0);
+      wallR.castShadow = true;
+      wallR.receiveShadow = true;
+      group.add(wallR);
+
+      const capR = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.14, length), capMat);
+      capR.position.set(halfW, 1.28, 0);
+      capR.castShadow = true;
+      group.add(capR);
+    } else if (wall === 'wood_fence') {
+      // 1.15m tall Timber Paddock Fence with Two Horizontal Rail Bars & End Posts
+      const fenceWoodMat = new THREE.MeshStandardMaterial({ color: 0x854d0e, roughness: 0.8 });
+      const fencePostMat = new THREE.MeshStandardMaterial({ color: 0x451a03, roughness: 0.9 });
+
+      // Left Fence
+      const postL1 = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.12, 1.25, 6), fencePostMat);
+      postL1.position.set(-halfW, 0.625, -length * 0.45);
+      postL1.castShadow = true;
+      group.add(postL1);
+
+      const postL2 = postL1.clone();
+      postL2.position.set(-halfW, 0.625, length * 0.45);
+      group.add(postL2);
+
+      const railL1 = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.14, length), fenceWoodMat);
+      railL1.position.set(-halfW, 0.55, 0);
+      railL1.castShadow = true;
+      group.add(railL1);
+
+      const railL2 = railL1.clone();
+      railL2.position.set(-halfW, 1.05, 0);
+      group.add(railL2);
+
+      // Right Fence
+      const postR1 = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.12, 1.25, 6), fencePostMat);
+      postR1.position.set(halfW, 0.625, -length * 0.45);
+      postR1.castShadow = true;
+      group.add(postR1);
+
+      const postR2 = postR1.clone();
+      postR2.position.set(halfW, 0.625, length * 0.45);
+      group.add(postR2);
+
+      const railR1 = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.14, length), fenceWoodMat);
+      railR1.position.set(halfW, 0.55, 0);
+      railR1.castShadow = true;
+      group.add(railR1);
+
+      const railR2 = railR1.clone();
+      railR2.position.set(halfW, 1.05, 0);
+      group.add(railR2);
+    } else if (wall === 'curbs_only') {
+      // 0.25m Low Beveled Edge Curbs
+      const curbMat = new THREE.MeshStandardMaterial({ color: 0x64748b, roughness: 0.7 });
+      const curbL = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.25, length), curbMat);
+      curbL.position.set(-halfW, 0.125, 0);
+      curbL.castShadow = true;
+      group.add(curbL);
+
+      const curbR = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.25, length), curbMat);
+      curbR.position.set(halfW, 0.125, 0);
+      curbR.castShadow = true;
+      group.add(curbR);
     }
 
     return group;
@@ -783,11 +1664,91 @@ export class BuildingSystem {
       return;
     }
 
+    if (struct.type === 'walled_road' || struct.type.startsWith('road_')) {
+      // Check if wall style requires solid collision (racing_wall, stone_wall, wood_fence)
+      let isSolidWall = true;
+      let halfW = 2.5; // standard width / 2
+      if (struct.type.startsWith('road_')) {
+        const sub = struct.type.substring(5);
+        if (sub.endsWith('_curbs_only') || sub.endsWith('_none')) {
+          isSolidWall = false;
+        }
+      }
+
+      if (isSolidWall) {
+        const yBase = struct.position.y;
+        const height = 1.35;
+        const r = 0.55;
+
+        // Left Wall Obstacle
+        const ptL = toWorld(-halfW, 0);
+        this.obstacles.push({
+          id: `${struct.id}_lw`,
+          type: 'prop',
+          x: ptL.x,
+          z: ptL.z,
+          yBase,
+          height,
+          radius: r,
+        });
+
+        // Right Wall Obstacle
+        const ptR = toWorld(halfW, 0);
+        this.obstacles.push({
+          id: `${struct.id}_rw`,
+          type: 'prop',
+          x: ptR.x,
+          z: ptR.z,
+          yBase,
+          height,
+          radius: r,
+        });
+      }
+      return;
+    }
+
+    if (struct.type === 'track_start_gate' || struct.type === 'track_finish_gate') {
+      const yBase = struct.position.y;
+      const height = 5.5;
+      const r = 0.8;
+
+      const ptL = toWorld(-2.6, 0);
+      this.obstacles.push({
+        id: `${struct.id}_postL`,
+        type: 'prop',
+        x: ptL.x,
+        z: ptL.z,
+        yBase,
+        height,
+        radius: r,
+      });
+
+      const ptR = toWorld(2.6, 0);
+      this.obstacles.push({
+        id: `${struct.id}_postR`,
+        type: 'prop',
+        x: ptR.x,
+        z: ptR.z,
+        yBase,
+        height,
+        radius: r,
+      });
+      return;
+    }
+
     let radius = 1.5;
     let height = 2.8;
 
-    if (struct.type === 'pillar_wood') radius = 0.5;
-    if (struct.type === 'campfire' || struct.type === 'workbench') radius = 0.9;
+    if (struct.type === 'pillar_wood') { radius = 0.5; height = 3.2; }
+    else if (struct.type === 'campfire' || struct.type === 'workbench') { radius = 0.9; height = 1.2; }
+    else if (struct.type === 'lantern_post') { radius = 0.45; height = 3.4; }
+    else if (struct.type === 'target_dummy') { radius = 0.65; height = 2.2; }
+    else if (struct.type === 'crate_wooden') { radius = 0.85; height = 1.3; }
+    else if (struct.type === 'barrel_stack') { radius = 1.1; height = 1.6; }
+    else if (struct.type === 'camp_tent') { radius = 1.8; height = 2.2; }
+    else if (struct.type === 'stone_well') { radius = 1.6; height = 3.4; }
+    else if (struct.type === 'watchtower') { radius = 2.2; height = 7.5; }
+    else if (struct.type === 'windmill') { radius = 2.9; height = 10.0; }
 
     this.obstacles.push({
       id: struct.id,
@@ -895,13 +1856,19 @@ export class BuildingSystem {
   }
 
   /**
-   * Check if player is standing on or near a Catan Road (+25% movement speed)
+   * Check if player is standing on or near a Catan Road or Circuit Track (+30% movement speed)
    */
   public isPlayerOnCatanRoad(playerPos: THREE.Vector3): boolean {
-    return this.structures.some(s => {
-      if (s.data.type === 'catan_road') {
+    return this.structures.some((s) => {
+      if (
+        s.data.type === 'catan_road' ||
+        s.data.type === 'walled_road' ||
+        s.data.type === 'track_start_gate' ||
+        s.data.type === 'track_finish_gate' ||
+        s.data.type.startsWith('road_')
+      ) {
         const p = s.data.position;
-        return Math.hypot(p.x - playerPos.x, p.z - playerPos.z) < 2.5;
+        return Math.hypot(p.x - playerPos.x, p.z - playerPos.z) < 3.5;
       }
       return false;
     });
@@ -938,4 +1905,43 @@ export class BuildingSystem {
       return false;
     });
   }
+
+  /**
+   * Continuous animation update for mechanical/animated structures (e.g. windmills)
+   */
+  public update(delta: number) {
+    for (const struct of this.structures) {
+      if (struct.data.type === 'windmill') {
+        const rotor = struct.mesh.getObjectByName('WindmillRotor');
+        if (rotor) {
+          rotor.rotation.z += delta * 1.2;
+        }
+      }
+    }
+
+    // Also rotate active preview hologram if windmill
+    if (this.currentPreviewType === 'windmill' && this.hologramGroup.visible) {
+      const protoRotor = this.hologramGroup.getObjectByName('WindmillRotor');
+      if (protoRotor) {
+        protoRotor.rotation.z += delta * 1.2;
+      }
+    }
+  }
+
+  /**
+   * Synchronize all placed player structures directly to terrain surface
+   */
+  public syncAllStructuresToTerrain() {
+    for (const struct of this.structures) {
+      const ny = TerrainManager.getTerrainHeight(struct.data.position.x, struct.data.position.z);
+      struct.data.position.y = ny;
+      struct.mesh.position.y = ny;
+
+      const obs = this.obstacles.find((o) => o.id === struct.data.id);
+      if (obs) {
+        obs.yBase = ny;
+      }
+    }
+  }
 }
+

@@ -421,6 +421,22 @@ class WebAudioEngine {
       delay += note.d * 0.8;
     });
   }
+
+  public playShrineActivate() {
+    this.playShrineFanfare();
+  }
+
+  public playPlaceStructure() {
+    this.playShrineFanfare();
+  }
+
+  public playSwordHit() {
+    this.playHitImpact();
+  }
+
+  public playCraftSuccess() {
+    this.playRupeeChime();
+  }
 }
 
 export const audioEngine = new WebAudioEngine();

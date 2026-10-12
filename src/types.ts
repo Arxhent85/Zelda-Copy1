@@ -14,6 +14,7 @@ export type PlayerActionState =
   | 'ATTACK_HEAVY'
   | 'BOW_AIM'
   | 'SWIMMING'
+  | 'RIDE'
   | 'HIT_KNOCKBACK'
   | 'DEAD';
 
@@ -27,7 +28,7 @@ export interface Vector3D {
 
 export interface ObstacleCollider {
   id?: string;
-  type?: 'tree' | 'rock' | 'ruins' | 'shrine' | 'chest' | 'enemy';
+  type?: 'tree' | 'rock' | 'ruins' | 'shrine' | 'chest' | 'enemy' | 'mount' | 'prop';
   x: number;
   z: number;
   yBase: number;
@@ -101,7 +102,22 @@ export interface BuildingStructure {
 
 export interface HarvestableNode {
   id: string;
-  type: 'tree_oak' | 'tree_pine' | 'rock_boulder' | 'ore_iron' | 'ore_gold' | 'ore_crystal' | 'clay_deposit' | 'wheat_crop' | 'wool_bush';
+  type: 
+    | 'tree_oak' 
+    | 'tree_pine' 
+    | 'tree_sakura' 
+    | 'tree_birch' 
+    | 'tree_apple' 
+    | 'flower_silent_princess' 
+    | 'shroom_cluster' 
+    | 'berry_bush' 
+    | 'rock_boulder' 
+    | 'ore_iron' 
+    | 'ore_gold' 
+    | 'ore_crystal' 
+    | 'clay_deposit' 
+    | 'wheat_crop' 
+    | 'wool_bush';
   position: Vector3D;
   health: number;
   maxHealth: number;
@@ -113,7 +129,7 @@ export interface HarvestableNode {
   fallAngle?: number;
 }
 
-export type EnemyType = 'boblins' | 'slime' | 'stone_guardian' | 'crystal_dragon' | 'goomba';
+export type EnemyType = 'boblins' | 'slime' | 'stone_guardian' | 'stone_talus' | 'crystal_dragon' | 'goomba';
 
 export interface EnemyState {
   id: string;
@@ -131,6 +147,22 @@ export interface EnemyState {
   deathTimer?: number;
   isSquished?: boolean;
   squishProgress?: number;
+}
+
+export type MountType = 'horse' | 'zonai_glider';
+
+export interface MountData {
+  id: string;
+  type: MountType;
+  name: string;
+  position: Vector3D;
+  rotation: number;
+  velocity: Vector3D;
+  speed: number;
+  maxSpeed: number;
+  isMounted: boolean;
+  stamina: number;
+  maxStamina: number;
 }
 
 export interface WorldObjectType {
@@ -173,6 +205,18 @@ export interface Quest {
   rewardRupees: number;
 }
 
+export type AvatarVariant = 'hylian_hero' | 'princess_zelda' | 'kitsune_beast' | 'dragon_warrior';
+
+export interface WorldCreationOptions {
+  name: string;
+  seed: string;
+  biome: 'hyrule' | 'snow' | 'desert' | 'volcano';
+  template?: 'flat' | 'circuit_flat' | 'islands' | 'mountains' | 'procedural' | 'clear';
+  timeOfDay: number; // 6.0, 12.0, 18.5, 23.0
+  difficulty: 'explorer' | 'normal' | 'master';
+  avatarVariant: AvatarVariant;
+}
+
 export interface GameSettings {
   graphicsQuality: GraphicsQuality;
   shadowsEnabled: boolean;
@@ -182,4 +226,10 @@ export interface GameSettings {
   cameraSensitivity: number;
   invertY: boolean;
   touchControls: boolean;
+  avatarVariant?: AvatarVariant;
+  timeOfDay?: number; // 0.0 to 24.0
+  isTimeCycleActive?: boolean; // Tag/Nacht-Zyklus automatisch weiterlaufen?
+  timeCycleSpeed?: number; // Geschwindigkeits-Multiplikator (z.B. 0.5 bis 3.0)
 }
+
+

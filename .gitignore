@@ -6,3 +6,6 @@ coverage/
 *.log
 .env*
 !.env.example
+.skills_design/
+.skills_threejs/
+cloudflared-zelda.yml

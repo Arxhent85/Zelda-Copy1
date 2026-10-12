@@ -19,6 +19,12 @@ export class TerrainManager {
   public terrainMesh: THREE.Mesh | null = null;
   public terrainGeometry: THREE.PlaneGeometry | null = null;
 
+  // Active grid representation for instant, 100% accurate physics height sampling & terraforming
+  public static activeHeightGrid: Float32Array | null = null;
+  public static customColorGrid: Float32Array | null = null;
+  public static gridResolution: number = isMobile ? 120 : 200;
+  public static halfSize: number = 400;
+
   constructor() {}
 
   private static deformationDeltas: Map<string, number> = new Map();
@@ -42,9 +48,35 @@ export class TerrainManager {
   }
 
   /**
-   * Analytical Heightmap function - computes height Y for any 3D coordinate (x, z)
+   * Computes height Y for any 3D coordinate (x, z)
+   * Samples directly from activeHeightGrid with bilinear interpolation when active,
+   * falling back to analytical heightmap formula otherwise.
    */
   public static getTerrainHeight(x: number, z: number): number {
+    if (this.activeHeightGrid) {
+      const segs = this.gridResolution;
+      const step = (this.halfSize * 2) / segs;
+      const gx = (x + this.halfSize) / step;
+      const gz = (z + this.halfSize) / step;
+
+      const c0 = Math.max(0, Math.min(segs, Math.floor(gx)));
+      const r0 = Math.max(0, Math.min(segs, Math.floor(gz)));
+      const c1 = Math.min(segs, c0 + 1);
+      const r1 = Math.min(segs, r0 + 1);
+
+      const fx = gx - c0;
+      const fz = gz - r0;
+
+      const stride = segs + 1;
+      const h00 = this.activeHeightGrid[r0 * stride + c0];
+      const h10 = this.activeHeightGrid[r0 * stride + c1];
+      const h01 = this.activeHeightGrid[r1 * stride + c0];
+      const h11 = this.activeHeightGrid[r1 * stride + c1];
+
+      const top = h00 * (1 - fx) + h10 * fx;
+      const bottom = h01 * (1 - fx) + h11 * fx;
+      return top * (1 - fz) + bottom * fz;
+    }
     // Center origin offset
     const nx = x * 0.003;
     const nz = z * 0.003;
@@ -98,6 +130,17 @@ export class TerrainManager {
     const normal = new THREE.Vector3(hL - hR, 2.0 * delta, hD - hU);
     normal.normalize();
     return normal;
+  }
+
+  /**
+   * Checks whether the ground at (x, z) is covered in snow
+   */
+  public static isSnowAt(x: number, z: number): boolean {
+    const vy = TerrainManager.getTerrainHeight(x, z);
+    const normal = TerrainManager.getTerrainNormal(x, z);
+    if (vy > 24.0 && normal.y > 0.35) return true;
+    if (vy > 18.0 && normal.y > 0.65) return true;
+    return false;
   }
 
   /**
@@ -215,6 +258,14 @@ export class TerrainManager {
           // Subsurface Scattering tint (soft glacial blue in ambient shadows)
           gl_FragColor.rgb = mix(gl_FragColor.rgb, vec3(0.85, 0.93, 1.0), 0.12);
           gl_FragColor.rgb += vec3(0.95, 0.98, 1.0) * pSparkle * sparkleFactor;
+        } else if (gl_FragColor.r > 0.28 && gl_FragColor.r < 0.45 && gl_FragColor.g > 0.32 && gl_FragColor.g < 0.48) {
+          // Rock Cliff Striated Strata (Assassin's Creed / BotW rock formations)
+          float strata = sin(vViewPosition.y * 2.8) * 0.06 + sin(vViewPosition.y * 8.5) * 0.03;
+          gl_FragColor.rgb += vec3(strata);
+        } else if (gl_FragColor.r > 0.72 && gl_FragColor.g > 0.62 && gl_FragColor.b < 0.62) {
+          // Shoreline Sand Ripple Dunes
+          float sandRipple = sin((vViewPosition.x + vViewPosition.z) * 3.5) * 0.035;
+          gl_FragColor.rgb += vec3(sandRipple, sandRipple * 0.85, sandRipple * 0.5);
         }
         `
       );
@@ -227,6 +278,15 @@ export class TerrainManager {
 
     this.terrainMesh = mesh;
     this.terrainGeometry = geometry;
+
+    // Cache active grid for instant bilinear physics sampling
+    TerrainManager.activeHeightGrid = new Float32Array(count);
+    for (let i = 0; i < count; i++) {
+      TerrainManager.activeHeightGrid[i] = posAttr.getY(i);
+    }
+    TerrainManager.gridResolution = segments;
+    TerrainManager.halfSize = size / 2;
+
     return mesh;
   }
 
@@ -236,5 +296,50 @@ export class TerrainManager {
     if (this.terrainMaterialShader && this.terrainMaterialShader.uniforms.uTime) {
       this.terrainMaterialShader.uniforms.uTime.value = time;
     }
+  }
+
+  /**
+   * Sync activeHeightGrid from geometry position attribute
+   */
+  public syncHeightGrid() {
+    if (!this.terrainGeometry) return;
+    const pos = this.terrainGeometry.attributes.position;
+    const count = pos.count;
+    if (!TerrainManager.activeHeightGrid || TerrainManager.activeHeightGrid.length !== count) {
+      TerrainManager.activeHeightGrid = new Float32Array(count);
+    }
+    for (let i = 0; i < count; i++) {
+      TerrainManager.activeHeightGrid[i] = pos.getY(i);
+    }
+  }
+
+  /**
+   * Apply bulk heights array (e.g. from template or load game)
+   */
+  public applyHeightsArray(heights: Float32Array) {
+    if (!this.terrainGeometry) return;
+    const pos = this.terrainGeometry.attributes.position;
+    const count = Math.min(pos.count, heights.length);
+    for (let i = 0; i < count; i++) {
+      pos.setY(i, heights[i]);
+    }
+    pos.needsUpdate = true;
+    this.terrainGeometry.computeVertexNormals();
+    this.syncHeightGrid();
+  }
+
+  /**
+   * Apply bulk colors array (e.g. from template or load game)
+   */
+  public applyColorsArray(colors: Float32Array) {
+    if (!this.terrainGeometry) return;
+    const colAttr = this.terrainGeometry.attributes.color;
+    if (!colAttr) return;
+    const count = Math.min(colAttr.count * 3, colors.length);
+    const arr = colAttr.array as Float32Array;
+    for (let i = 0; i < count; i++) {
+      arr[i] = colors[i];
+    }
+    colAttr.needsUpdate = true;
   }
 }

@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect } from 'react';
-import { Sword, Wind, Zap, Shield, Target, Hand, Map, Package, Settings as SettingsIcon, Maximize, Minimize, Pickaxe, Hammer, RotateCw, Check, X, Plane } from 'lucide-react';
+import { Sword, Wind, Zap, Shield, Target, Hand, Map, Package, Settings as SettingsIcon, Maximize, Minimize, Pickaxe, Hammer, RotateCw, Check, X, Plane, Compass } from 'lucide-react';
 
 interface TouchControlsProps {
   onMove: (x: number, z: number) => void;
@@ -10,9 +10,10 @@ interface TouchControlsProps {
   onSprintDodge: (sprint: boolean) => void;
   onInteract: () => void;
   onLockOnToggle: () => void;
-  onOpenMap: () => void;
-  onOpenInventory: () => void;
-  onOpenSettings: () => void;
+  onOpenMap?: () => void;
+  onOpenInventory?: () => void;
+  onOpenSettings?: () => void;
+  onOpenStartMenu?: () => void;
   // Mining, Crafting & Building
   onMineHarvest?: () => void;
   onOpenCrafting?: () => void;
@@ -20,6 +21,11 @@ interface TouchControlsProps {
   onRotateBuildPreview?: () => void;
   onPlaceBuilding?: () => void;
   onCancelBuild?: () => void;
+  isBowEquipped?: boolean;
+  isEditorActive?: boolean;
+  isFlying?: boolean;
+  onAscend?: (active: boolean) => void;
+  onDescend?: (active: boolean) => void;
 }
 
 export const VirtualTouchControls: React.FC<TouchControlsProps> = ({
@@ -34,12 +40,18 @@ export const VirtualTouchControls: React.FC<TouchControlsProps> = ({
   onOpenMap,
   onOpenInventory,
   onOpenSettings,
+  onOpenStartMenu,
   onMineHarvest,
   onOpenCrafting,
   isBuildModeActive = false,
   onRotateBuildPreview,
   onPlaceBuilding,
   onCancelBuild,
+  isBowEquipped = false,
+  isEditorActive = false,
+  isFlying = false,
+  onAscend,
+  onDescend,
 }) => {
   // Joystick State
   const joystickTouchId = useRef<number | null>(null);
@@ -53,6 +65,15 @@ export const VirtualTouchControls: React.FC<TouchControlsProps> = ({
 
   const [isSprinting, setIsSprinting] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isTouchDevice, setIsTouchDevice] = useState(false);
+
+  useEffect(() => {
+    setIsTouchDevice(
+      'ontouchstart' in window ||
+      navigator.maxTouchPoints > 0 ||
+      window.matchMedia('(pointer: coarse)').matches
+    );
+  }, []);
 
   useEffect(() => {
     const handleFSChange = () => {
@@ -175,20 +196,22 @@ export const VirtualTouchControls: React.FC<TouchControlsProps> = ({
 
   return (
     <div className="pointer-events-none absolute inset-0 select-none touch-none overflow-hidden z-10">
-      {/* Left Touch Screen Region for Dynamic Joystick */}
-      <div
-        className="pointer-events-auto absolute top-0 left-0 bottom-0 w-1/2 touch-none"
-        onTouchStart={handleLeftTouchStart}
-      />
-
-      {/* Right Touch Screen Region for Camera Orbit */}
-      <div
-        className="pointer-events-auto absolute top-0 right-0 bottom-0 w-1/2 touch-none"
-        onTouchStart={handleRightTouchStart}
-      />
+      {/* Left Touch Screen Region for Dynamic Joystick - Only rendered on active touch devices during gameplay */}
+      {isTouchDevice && !isEditorActive && (
+        <>
+          <div
+            className="pointer-events-auto absolute top-0 left-0 bottom-0 w-1/2 touch-none"
+            onTouchStart={handleLeftTouchStart}
+          />
+          <div
+            className="pointer-events-auto absolute top-0 right-0 bottom-0 w-1/2 touch-none"
+            onTouchStart={handleRightTouchStart}
+          />
+        </>
+      )}
 
       {/* Visual Dynamic Joystick Ring & Knob */}
-      {joystickCenter ? (
+      {!isEditorActive && (joystickCenter ? (
         <div
           className="pointer-events-none absolute z-20 flex h-28 w-28 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-2 border-emerald-400/60 bg-slate-900/50 backdrop-blur-md shadow-2xl animate-fade-in"
           style={{ left: joystickCenter.x, top: joystickCenter.y }}
@@ -205,53 +228,11 @@ export const VirtualTouchControls: React.FC<TouchControlsProps> = ({
         <div className="pointer-events-none absolute bottom-10 left-10 z-20 flex h-28 w-28 items-center justify-center rounded-full border border-white/20 bg-slate-900/30 backdrop-blur-sm opacity-60">
           <div className="h-10 w-10 rounded-full bg-emerald-500/50" />
         </div>
-      )}
+      ))}
 
-      {/* Top Header Controls */}
-      <div className="pointer-events-auto absolute top-4 left-4 z-30 flex items-center gap-2 flex-wrap max-w-[80vw]">
-        <button
-          onTouchStart={(e) => e.stopPropagation()}
-          onClick={onOpenMap}
-          className="flex items-center gap-1.5 rounded-full bg-slate-900/80 px-3 py-1.5 text-xs font-semibold text-emerald-400 backdrop-blur-md transition hover:bg-slate-800 active:scale-95"
-        >
-          <Map className="h-4 w-4" /> Map
-        </button>
-        <button
-          onTouchStart={(e) => e.stopPropagation()}
-          onClick={onOpenInventory}
-          className="flex items-center gap-1.5 rounded-full bg-slate-900/80 px-3 py-1.5 text-xs font-semibold text-amber-400 backdrop-blur-md transition hover:bg-slate-800 active:scale-95"
-        >
-          <Package className="h-4 w-4" /> Inventar
-        </button>
-        {onOpenCrafting && (
-          <button
-            onTouchStart={(e) => e.stopPropagation()}
-            onClick={onOpenCrafting}
-            className="flex items-center gap-1.5 rounded-full bg-slate-900/80 px-3 py-1.5 text-xs font-semibold text-orange-400 backdrop-blur-md transition hover:bg-slate-800 active:scale-95 border border-orange-500/30"
-          >
-            <Hammer className="h-4 w-4" /> Crafting
-          </button>
-        )}
-        <button
-          onTouchStart={(e) => e.stopPropagation()}
-          onClick={toggleFullscreen}
-          className="flex items-center gap-1.5 rounded-full bg-slate-900/80 px-3 py-1.5 text-xs font-semibold text-cyan-400 backdrop-blur-md transition hover:bg-slate-800 active:scale-95"
-          title="Vollbildmodus umschalten"
-        >
-          {isFullscreen ? <Minimize className="h-4 w-4" /> : <Maximize className="h-4 w-4" />}
-          <span className="hidden sm:inline">{isFullscreen ? 'Beenden' : 'Vollbild'}</span>
-        </button>
-        <button
-          onTouchStart={(e) => e.stopPropagation()}
-          onClick={onOpenSettings}
-          className="flex items-center gap-1.5 rounded-full bg-slate-900/80 p-2 text-slate-200 backdrop-blur-md transition hover:bg-slate-800 active:scale-95"
-        >
-          <SettingsIcon className="h-4 w-4" />
-        </button>
-      </div>
-
-      {/* Action Buttons Cluster (Right Bottom) */}
-      <div className="pointer-events-auto absolute bottom-8 right-6 z-30 flex flex-col items-end gap-3 touch-none">
+      {/* Action Buttons Cluster (Right Bottom) - Only in play mode */}
+      {!isEditorActive && (
+        <div className="pointer-events-auto absolute bottom-8 right-6 z-30 flex flex-col items-end gap-3 touch-none">
         {/* Build Mode Controls Bar if Active */}
         {isBuildModeActive && (
           <div className="flex items-center gap-2 bg-slate-950/90 p-2 rounded-2xl border border-cyan-500/50 backdrop-blur-md mb-1 animate-fade-in shadow-2xl">
@@ -293,14 +274,16 @@ export const VirtualTouchControls: React.FC<TouchControlsProps> = ({
             </button>
           )}
 
-          <button
-            onTouchStart={(e) => e.stopPropagation()}
-            onClick={onLockOnToggle}
-            className="flex h-12 w-12 items-center justify-center rounded-full bg-blue-600/90 text-white shadow-xl backdrop-blur-md active:scale-90"
-            title="Target Lock"
-          >
-            <Target className="h-6 w-6" />
-          </button>
+          {isBowEquipped && (
+            <button
+              onTouchStart={(e) => e.stopPropagation()}
+              onClick={onLockOnToggle}
+              className="flex h-12 w-12 items-center justify-center rounded-full bg-blue-600/90 text-white shadow-xl backdrop-blur-md active:scale-90"
+              title="Ziel erfassen / Bogen zielen"
+            >
+              <Target className="h-6 w-6" />
+            </button>
+          )}
           <button
             onTouchStart={(e) => e.stopPropagation()}
             onClick={onInteract}
@@ -311,22 +294,46 @@ export const VirtualTouchControls: React.FC<TouchControlsProps> = ({
           </button>
         </div>
 
-        {/* Bottom Cluster: Fliegen, Jump/Glide, Sprint/Dodge, Attack */}
-        <div className="flex items-end gap-2.5">
-          {onFlyToggle && (
+        {/* Soaring Flight Vertical Altitude Cluster (Ascend ⬆️ / Descend ⬇️) */}
+        {isFlying && (
+          <div className="flex items-center gap-3 mb-1 animate-fade-in bg-slate-950/85 p-1.5 rounded-2xl border border-sky-400/50 backdrop-blur-md shadow-2xl">
             <button
               onTouchStart={(e) => {
                 e.stopPropagation();
-                onFlyToggle();
+                onAscend?.(true);
               }}
-              onClick={onFlyToggle}
-              className="flex h-14 w-14 flex-col items-center justify-center rounded-full bg-gradient-to-tr from-sky-500 via-blue-600 to-indigo-500 text-white shadow-xl backdrop-blur-md active:scale-90 border-2 border-sky-300/70"
-              title="Fliegen 🚀 (Flight Boost)"
+              onTouchEnd={(e) => {
+                e.stopPropagation();
+                onAscend?.(false);
+              }}
+              onMouseDown={() => onAscend?.(true)}
+              onMouseUp={() => onAscend?.(false)}
+              className="flex items-center gap-1.5 rounded-xl bg-gradient-to-t from-sky-600 to-cyan-400 px-3.5 py-2 text-xs font-black text-slate-950 active:scale-95 shadow-lg border border-cyan-200"
+              title="Steigen (Hold to fly up)"
             >
-              <Plane className="h-6 w-6" />
-              <span className="text-[9px] font-black tracking-tighter uppercase leading-none mt-0.5 text-cyan-100">Fliegen</span>
+              <span>⬆️</span> Steigen
             </button>
-          )}
+            <button
+              onTouchStart={(e) => {
+                e.stopPropagation();
+                onDescend?.(true);
+              }}
+              onTouchEnd={(e) => {
+                e.stopPropagation();
+                onDescend?.(false);
+              }}
+              onMouseDown={() => onDescend?.(true)}
+              onMouseUp={() => onDescend?.(false)}
+              className="flex items-center gap-1.5 rounded-xl bg-gradient-to-t from-blue-800 to-indigo-600 px-3.5 py-2 text-xs font-black text-white active:scale-95 shadow-lg border border-indigo-300"
+              title="Sinken (Hold to dive)"
+            >
+              <span>⬇️</span> Sinken
+            </button>
+          </div>
+        )}
+
+        {/* Bottom Cluster: Jump/Glide, Sprint/Dodge, Attack */}
+        <div className="flex items-end gap-3">
 
           <button
             onTouchStart={(e) => {
@@ -373,6 +380,7 @@ export const VirtualTouchControls: React.FC<TouchControlsProps> = ({
           </button>
         </div>
       </div>
+      )}
     </div>
   );
 };

@@ -1,5 +1,9 @@
 import * as THREE from 'three';
-import { DamageText, GameSettings, GraphicsQuality, InventoryItem, PlayerStats, ShrineData } from '../types';
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
+import { DamageText, GameSettings, GraphicsQuality, InventoryItem, PlayerStats, ShrineData, AvatarVariant, WorldCreationOptions } from '../types';
+
 import { audioEngine } from './AudioEngine';
 import { AvatarHero } from './Avatar';
 import { BuildingSystem } from './BuildingSystem';
@@ -9,14 +13,19 @@ import { CraftingSystem } from './CraftingSystem';
 import { EnemyManager } from './Enemies';
 import { FoliageManager } from './Foliage';
 import { MiningAndHarvestingSystem } from './MiningAndHarvestingSystem';
+import { LevelEditorManager } from './LevelEditorManager';
 import { PhysicsEngine } from './PhysicsEngine';
 import { SkyAndLightingManager } from './SkyAndLighting';
 import { TerrainManager } from './Terrain';
 import { TerrainDeformationManager } from './TerrainDeformation';
 import { WaterManager } from './WaterShader';
+import { SnowFootprintManager } from './SnowFootprints';
+import { MountSystem } from './MountSystem';
+import { WildlifeManager } from './WildlifeManager';
 
 export class GameEngine {
   public renderer: THREE.WebGLRenderer;
+  public composer: EffectComposer | null = null;
   public scene: THREE.Scene;
   public camera: THREE.PerspectiveCamera;
 
@@ -25,6 +34,7 @@ export class GameEngine {
   public waterManager: WaterManager;
   public skyLighting: SkyAndLightingManager;
   public foliageManager: FoliageManager;
+  public snowFootprints: SnowFootprintManager;
   public avatar: AvatarHero;
   public physics: PhysicsEngine;
   public cameraControls: CameraControls;
@@ -32,6 +42,9 @@ export class GameEngine {
   public collectibleManager: CollectibleManager;
   public miningSystem: MiningAndHarvestingSystem;
   public buildingSystem: BuildingSystem;
+  public editorManager: LevelEditorManager;
+  public mountSystem: MountSystem;
+  public wildlifeManager: WildlifeManager;
 
   public isRunning = false;
   private animFrameId: number | null = null;
@@ -217,6 +230,15 @@ export class GameEngine {
 
   public damageTexts: DamageText[] = [];
 
+  // 🏎️ Circuit Lap Timer & Race State
+  public trackRace = {
+    isRacing: false,
+    raceStartTime: 0,
+    lapCount: 0,
+    bestLapTime: null as number | null,
+    lastGatePassTime: 0,
+  };
+
   // Callbacks to update React UI HUD
   public onStateUpdate?: () => void;
   public onToastMessage?: (msg: string) => void;
@@ -229,21 +251,50 @@ export class GameEngine {
       powerPreference: 'high-performance',
     });
 
-    const pixelRatio = settings.graphicsQuality === 'ultra' ? Math.min(window.devicePixelRatio, 2) : 1;
+    const pixelRatio = settings.graphicsQuality === 'low' ? 1.0 : Math.min(window.devicePixelRatio || 1, 2.0);
     this.renderer.setPixelRatio(pixelRatio);
-    this.renderer.setSize(canvas.clientWidth, canvas.clientHeight);
+    const initialWidth = Math.max(canvas.clientWidth || (typeof window !== 'undefined' ? window.innerWidth : 800), 100);
+    const initialHeight = Math.max(canvas.clientHeight || (typeof window !== 'undefined' ? window.innerHeight : 600), 100);
+    this.renderer.setSize(initialWidth, initialHeight);
     this.renderer.shadowMap.enabled = settings.shadowsEnabled;
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.shadowMap.type = THREE.PCFShadowMap;
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 0.92;
 
     // 2. Three.js Scene & Camera Setup
     this.scene = new THREE.Scene();
-    this.camera = new THREE.PerspectiveCamera(65, canvas.clientWidth / canvas.clientHeight, 0.1, 1000);
+    this.camera = new THREE.PerspectiveCamera(65, initialWidth / initialHeight, 0.1, 1000);
+
+    // Post-processing EffectComposer with Cinematic Bloom & ACES Tone Mapping
+    if (settings.graphicsQuality !== 'low') {
+      try {
+        this.composer = new EffectComposer(this.renderer);
+        this.composer.setPixelRatio(pixelRatio);
+        const renderPass = new RenderPass(this.scene, this.camera);
+        this.composer.addPass(renderPass);
+
+        const bloomPass = new UnrealBloomPass(
+          new THREE.Vector2(initialWidth, initialHeight),
+          0.16, // strength: delicate cinematic glow, no washing out
+          0.35, // radius
+          0.90  // threshold: triggers only on bright sun glints & Sheikah runes
+        );
+        this.composer.addPass(bloomPass);
+
+        const outputPass = new OutputPass();
+        this.composer.addPass(outputPass);
+      } catch (err) {
+        console.warn('EffectComposer fallback to direct WebGL render:', err);
+        this.composer = null;
+      }
+    }
 
     // 3. Sub-system Instances
     this.terrainManager = new TerrainManager();
     this.waterManager = new WaterManager();
     this.skyLighting = new SkyAndLightingManager(this.scene);
     this.foliageManager = new FoliageManager(this.scene);
+    this.snowFootprints = new SnowFootprintManager();
     this.avatar = new AvatarHero();
     this.physics = new PhysicsEngine();
     this.cameraControls = new CameraControls(this.camera);
@@ -251,9 +302,44 @@ export class GameEngine {
     this.collectibleManager = new CollectibleManager(this.scene);
     this.miningSystem = new MiningAndHarvestingSystem(this.scene);
     this.buildingSystem = new BuildingSystem(this.scene);
+    this.mountSystem = new MountSystem(this.scene);
+    this.wildlifeManager = new WildlifeManager(this.scene);
 
     this.initWorld();
     this.terrainDeformation = new TerrainDeformationManager(this.terrainManager);
+
+    this.editorManager = new LevelEditorManager(
+      this.scene,
+      this.terrainManager,
+      this.foliageManager,
+      this.enemyManager,
+      this.buildingSystem,
+      this.collectibleManager,
+      this.miningSystem,
+      this.mountSystem,
+      this.wildlifeManager
+    );
+  }
+
+  public toggleEditor(active?: boolean): boolean {
+    const next = active !== undefined ? active : !this.editorManager.isEditorActive;
+    this.editorManager.isEditorActive = next;
+    this.cameraControls.isEditorMode = next;
+    if (next) {
+      this.cameraControls.editorTarget.copy(this.physics.position);
+      this.cameraControls.distance = 45.0;
+      this.cameraControls.pitch = 0.65;
+      audioEngine.playGliderOpen();
+    } else {
+      const safeY = TerrainManager.getTerrainHeight(this.physics.position.x, this.physics.position.z);
+      this.physics.position.y = Math.max(safeY + 0.5, this.physics.position.y);
+      this.cameraControls.distance = 8.0;
+      this.cameraControls.pitch = 0.25;
+      this.editorManager.brushMarker.visible = false;
+      this.editorManager.isApplyingTool = false;
+      audioEngine.playShrineActivate();
+    }
+    return next;
   }
 
   private initWorld() {
@@ -270,6 +356,7 @@ export class GameEngine {
 
     // Foliage & Details
     this.foliageManager.init(this.settings.graphicsQuality);
+    this.scene.add(this.snowFootprints.group);
 
     // Avatar Hero & Particle Trail Group
     this.scene.add(this.avatar.mesh);
@@ -279,12 +366,18 @@ export class GameEngine {
     this.enemyManager.spawnInitialEnemies();
     this.collectibleManager.initWorldObjects();
 
-    // Register Static Obstacle Colliders (Trees, Rocks, Ruins, Shrines, Chests, Ore Nodes, Buildings)
+    // Wildlife rupee drops
+    this.wildlifeManager.onRupeeDropped = (amount, pos) => {
+      this.collectibleManager.spawnRupee(pos.x, pos.y + 0.5, pos.z, amount);
+    };
+
+    // Register Static Obstacle Colliders (Trees, Rocks, Ruins, Shrines, Chests, Ore Nodes, Buildings, Mounts)
     this.physics.staticObstacles = [
       ...this.foliageManager.obstacles,
       ...this.collectibleManager.getObstacles(),
       ...this.miningSystem.obstacles,
       ...this.buildingSystem.obstacles,
+      ...this.mountSystem.obstacles,
     ];
 
     // Clear grass underneath all built structures
@@ -301,9 +394,17 @@ export class GameEngine {
   }
 
   public resize(width: number, height: number) {
-    this.camera.aspect = width / height;
+    const w = Math.max(width || (typeof window !== 'undefined' ? window.innerWidth : 800), 100);
+    const h = Math.max(height || (typeof window !== 'undefined' ? window.innerHeight : 600), 100);
+    const pixelRatio = this.settings.graphicsQuality === 'low' ? 1.0 : Math.min(window.devicePixelRatio || 1, 2.0);
+    this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
-    this.renderer.setSize(width, height);
+    this.renderer.setPixelRatio(pixelRatio);
+    this.renderer.setSize(w, h);
+    if (this.composer) {
+      this.composer.setPixelRatio(pixelRatio);
+      this.composer.setSize(w, h);
+    }
   }
 
   public inputPollFn?: () => {
@@ -334,29 +435,71 @@ export class GameEngine {
         if (this.inputPollFn) {
           const input = this.inputPollFn();
 
-          this.physics.update(
-            delta,
-            { x: input.moveX, z: input.moveZ },
-            this.cameraControls.yaw,
-            input.isSprint,
-            input.isJump,
-            input.isAttack,
-            input.isDodge,
-            false,
-            this.stats,
-            () => {
-              if (this.onToastMessage) this.onToastMessage('Ausdauer verbraucht!');
-            },
-            this.cameraControls.pitch
-          );
+          if (this.editorManager.isEditorActive) {
+            const panSpeed = 45.0 * delta;
+            if (Math.abs(input.moveZ) > 0.05 || Math.abs(input.moveX) > 0.05) {
+              this.cameraControls.panEditor(input.moveZ * panSpeed, input.moveX * panSpeed);
+            }
+          } else {
+            const isRiding = this.mountSystem.activeMountedIndex >= 0;
 
-          if (input.isAttack && this.physics.attackCooldown <= 0.05) {
-            this.performAttackOrHarvest();
+            if (isRiding) {
+              // Ride controls - horse / glider physics
+              this.mountSystem.update(
+                delta,
+                { x: input.moveX, z: input.moveZ },
+                this.cameraControls.yaw,
+                input.isSprint
+              );
+
+              const activeMount = this.mountSystem.mounts[this.mountSystem.activeMountedIndex];
+              if (activeMount) {
+                this.physics.position.set(
+                  activeMount.data.position.x,
+                  activeMount.data.position.y + 1.15,
+                  activeMount.data.position.z
+                );
+                this.physics.rotation = activeMount.data.rotation;
+                this.physics.velocity.set(0, 0, 0);
+                this.physics.actionState = 'RIDE';
+              }
+              const onRoad = this.buildingSystem.isPlayerOnCatanRoad(this.physics.position);
+              this.physics.update(
+                delta,
+                { x: input.moveX, z: input.moveZ },
+                this.cameraControls.yaw,
+                input.isSprint,
+                input.isJump,
+                input.isAttack,
+                input.isDodge,
+                false,
+                this.stats,
+                () => {
+                  if (this.onToastMessage) this.onToastMessage('Ausdauer verbraucht!');
+                },
+                this.cameraControls.pitch,
+                onRoad
+              );
+            }
+
+            if (input.isAttack && this.physics.attackCooldown <= 0.05) {
+              this.performAttackOrHarvest();
+            }
           }
         }
 
         this.update(delta, elapsedTime);
-        this.renderer.render(this.scene, this.camera);
+        try {
+          if (this.composer) {
+            this.composer.render();
+          } else {
+            this.renderer.render(this.scene, this.camera);
+          }
+        } catch (compErr) {
+          console.warn('Composer rendering fell back to standard WebGL renderer:', compErr);
+          this.composer = null;
+          this.renderer.render(this.scene, this.camera);
+        }
       } catch (err) {
         console.warn('GameEngine frame loop recovered from error:', err);
       }
@@ -392,6 +535,7 @@ export class GameEngine {
     );
     this.foliageManager.update(elapsedTime, delta, this.physics.position);
     this.terrainManager.updateTime(elapsedTime);
+    this.editorManager.update(delta);
 
     // Dynamic music transition based on time or nearby enemies
     const nearestEnemy = this.enemyManager.enemies.find((e) => e.state.targetDistance < 15.0 && e.state.state !== 'DEAD');
@@ -424,6 +568,15 @@ export class GameEngine {
       );
     }
     this.updateTrailParticles(delta);
+
+    // 3.6. Mountain Snow Boot Footprints Decals (Persist and fade over time)
+    this.snowFootprints.update(
+      delta,
+      this.physics.position,
+      this.physics.rotation,
+      this.physics.isGrounded,
+      horizSpeed > 0.4
+    );
 
     // 4. Enemy AI Update & Damage Handling
     this.enemyManager.updateAI(delta, this.physics.position, (damage) => {
@@ -478,8 +631,13 @@ export class GameEngine {
       }
     }
 
-    // 5. Mining & Building Systems Update
+    // 5. Mining, Building, Mounts & Wildlife Systems Update
     this.miningSystem.update(delta);
+    this.buildingSystem.update(delta);
+    this.wildlifeManager.update(delta, this.physics.position);
+    if (this.mountSystem.activeMountedIndex < 0) {
+      this.mountSystem.update(delta);
+    }
     if (this.buildingSystem.isBuildModeActive) {
       this.buildingSystem.updateHologram(this.physics.position, this.physics.rotation);
     }
@@ -500,11 +658,65 @@ export class GameEngine {
       }
     }
 
+    // 9. 🏎️ Circuit Lap Timer & Race Check
+    this.checkTrackRaceProgress(elapsedTime);
+
     // Throttle React state sync to 10Hz to eliminate DOM thrashing & crashes
     this.lastStateUpdateTimer += delta;
     if (this.lastStateUpdateTimer >= 0.1) {
       this.lastStateUpdateTimer = 0;
       if (this.onStateUpdate) this.onStateUpdate();
+    }
+  }
+
+  /**
+   * Check if player passes through a Start or Finish gate to record lap times
+   */
+  private checkTrackRaceProgress(now: number) {
+    if (this.editorManager.isEditorActive) return;
+
+    for (const struct of this.buildingSystem.structures) {
+      if (struct.data.type === 'track_start_gate' || struct.data.type === 'track_finish_gate') {
+        const dist = Math.hypot(
+          struct.data.position.x - this.physics.position.x,
+          struct.data.position.z - this.physics.position.z
+        );
+
+        if (dist < 4.0) {
+          if (!this.trackRace.isRacing) {
+            // Start Race!
+            if (now - this.trackRace.lastGatePassTime > 6.0) {
+              this.trackRace.isRacing = true;
+              this.trackRace.raceStartTime = now;
+              this.trackRace.lastGatePassTime = now;
+              audioEngine.playShrineFanfare();
+              if (this.onToastMessage) {
+                this.onToastMessage('🏁 RENNEN GESTARTET! Zeige dein fahrerisches/läuferisches Können!');
+              }
+            }
+          } else {
+            // Check if lap or sprint completed (> 6.0 seconds)
+            const lapTime = now - this.trackRace.raceStartTime;
+            if (lapTime > 6.0 && now - this.trackRace.lastGatePassTime > 5.0) {
+              this.trackRace.lapCount++;
+              this.trackRace.lastGatePassTime = now;
+              const isRecord = !this.trackRace.bestLapTime || lapTime < this.trackRace.bestLapTime;
+              if (isRecord) {
+                this.trackRace.bestLapTime = lapTime;
+              }
+              this.trackRace.raceStartTime = now;
+              audioEngine.playShrineFanfare();
+              if (this.onToastMessage) {
+                this.onToastMessage(
+                  `🏆 RUNDE ${this.trackRace.lapCount} BEENDET: ${lapTime.toFixed(2)}s! ${
+                    isRecord ? '⚡ NEUER REKORD!' : ''
+                  }`
+                );
+              }
+            }
+          }
+        }
+      }
     }
   }
 
@@ -580,18 +792,57 @@ export class GameEngine {
           // Enemy handles fall-over collapse animation inside EnemyManager.updateAI
 
           // Reward XP & Rupees
-          this.stats.xp += 35;
-          this.stats.rupees += 20;
-          enemyHitMsg = `💥 ${enemy.state.name} besiegt! (+20 Rubine)`;
+          const isTalus = enemy.state.type === 'stone_talus';
+          const isBoss = enemy.state.type === 'stone_guardian' || isTalus;
+          const xpGain = isBoss ? 150 : 35;
+          const rupeeGain = isTalus ? 50 : isBoss ? 45 : 20;
+
+          this.stats.xp += xpGain;
+          this.stats.rupees += rupeeGain;
+          enemyHitMsg = `💥 ${enemy.state.name} besiegt! (+${rupeeGain} Rubine)`;
           if (this.onToastMessage) this.onToastMessage(enemyHitMsg);
 
           // Drop rupees
-          this.collectibleManager.spawnRupee(ePos.x, ePos.y + 0.5, ePos.z, 25);
+          this.collectibleManager.spawnRupee(ePos.x, ePos.y + 0.5, ePos.z, rupeeGain);
+
+          // If Stone Talus defeated, drop rare ore minerals!
+          if (isTalus) {
+            const rareMinerals = [
+              { name: 'Golderz', qty: 2, icon: '✨' },
+              { name: 'Kristall', qty: 2, icon: '💎' },
+              { name: 'Eisenerz', qty: 4, icon: '⛏️' },
+            ];
+            rareMinerals.forEach((m) => {
+              const ex = this.inventory.find((i) => i.name === m.name);
+              if (ex) {
+                ex.quantity += m.qty;
+              } else {
+                this.inventory.push({
+                  id: `ore_${m.name.toLowerCase()}`,
+                  name: m.name,
+                  type: 'material',
+                  description: 'Wertvolles Erz aus dem besiegten Stone Talus!',
+                  icon: m.icon,
+                  quantity: m.qty,
+                });
+              }
+            });
+          }
         } else {
           enemyHitMsg = `⚔️ ${enemy.state.name} getroffen! (${enemy.state.health}/${enemy.state.maxHealth} HP)`;
         }
       }
     });
+
+    // 1.5. Check Magical Blupee Wildlife hit
+    const blupeeRupees = this.wildlifeManager.checkHitBlupee(playerPos, 3.2);
+    if (blupeeRupees > 0) {
+      hitAny = true;
+      this.stats.rupees += blupeeRupees;
+      this.collectibleManager.spawnRupee(playerPos.x, playerPos.y + 0.5, playerPos.z, blupeeRupees);
+      this.addDamageText(`✨ Blupee! +${blupeeRupees} Rubine`, playerPos, '#38bdf8', true);
+      enemyHitMsg = `✨ Magischer Blupee getroffen! (+${blupeeRupees} Rubine)`;
+    }
 
     // 2. Check Harvestable Nodes (Trees, Ore, Rocks)
     const nodeRes = this.miningSystem.hitHarvestableNode(playerPos, playerRot, equippedTool);
@@ -718,9 +969,93 @@ export class GameEngine {
   }
 
   /**
+   * Switches avatar archetype in real-time across 4 models
+   */
+  public setAvatarVariant(variant: AvatarVariant) {
+    this.avatar.setAvatarVariant(variant);
+    const names: Record<AvatarVariant, string> = {
+      hylian_hero: 'Recke Link (Männlich)',
+      princess_zelda: 'Prinzessin Zelda (Weiblich)',
+      kitsune_beast: 'Kitsune Schatten-Fuchs (Tierwesen)',
+      dragon_warrior: 'Drachen-Recke (Drachenwesen)',
+    };
+    if (this.onToastMessage) {
+      this.onToastMessage(`👤 Charakter gewechselt: ${names[variant]}`);
+    }
+    audioEngine.playShrineFanfare();
+  }
+
+  /**
+   * Applies custom world generation options (seed, biome, time of day, difficulty, character)
+   */
+  public applyWorldCreation(options: WorldCreationOptions) {
+    // 0. Landscape Template Generation (if selected)
+    if (options.template) {
+      this.editorManager.generateTemplate(options.template);
+    } else {
+      this.editorManager.syncEntireWorldToTerrain();
+    }
+
+    // 1. Time of Day
+    this.skyLighting.timeOfDay = options.timeOfDay;
+
+    // 2. Avatar Variant
+    this.setAvatarVariant(options.avatarVariant);
+
+    // 3. Biome Teleportation
+    if (options.biome === 'snow') {
+      const ty = TerrainManager.getTerrainHeight(-180, -160);
+      this.physics.position.set(-180, ty + 1.2, -160);
+      this.physics.velocity.set(0, 0, 0);
+    } else if (options.biome === 'desert') {
+      const ty = TerrainManager.getTerrainHeight(220, 220);
+      this.physics.position.set(220, ty + 1.2, 220);
+      this.physics.velocity.set(0, 0, 0);
+    } else if (options.biome === 'volcano') {
+      const ty = TerrainManager.getTerrainHeight(180, -180);
+      this.physics.position.set(180, ty + 1.2, -180);
+      this.physics.velocity.set(0, 0, 0);
+    } else {
+      const ty = TerrainManager.getTerrainHeight(0, 0);
+      this.physics.position.set(0, ty + 1.2, 0);
+      this.physics.velocity.set(0, 0, 0);
+    }
+
+    // 4. Difficulty Adjustments
+    if (options.difficulty === 'explorer') {
+      this.stats.maxHealth = 20; // 5 Hearts
+      this.stats.health = 20;
+      this.stats.maxStamina = 140;
+      this.stats.stamina = 140;
+    } else if (options.difficulty === 'master') {
+      this.stats.maxHealth = 8; // 2 Hearts
+      this.stats.health = 8;
+      this.stats.maxStamina = 80;
+      this.stats.stamina = 80;
+    } else {
+      this.stats.maxHealth = 12;
+      this.stats.health = 12;
+      this.stats.maxStamina = 100;
+      this.stats.stamina = 100;
+    }
+
+    const biomeNames = {
+      hyrule: 'Hyrule-Ebene & Wälder',
+      snow: 'Hebra-Schneegipfel',
+      desert: 'Gerudo-Wüste & Canyons',
+      volcano: 'Eldin-Vulkanland',
+    };
+
+    if (this.onToastMessage) {
+      this.onToastMessage(`🌍 Welt "${options.name || 'Hyrule'}" erschaffen! Biom: ${biomeNames[options.biome]}`);
+    }
+  }
+
+  /**
    * Toggle Build Mode / Select Building Structure to place
    */
   public selectBuildingType(buildingType: string | null) {
+
     this.buildingSystem.setPreviewStructure(buildingType);
   }
 
@@ -790,9 +1125,24 @@ export class GameEngine {
   }
 
   public interactWithNearbyObject(): string | null {
-    // Check nearby Shrines or Chests
     const playerPos = this.physics.position;
 
+    // 0. Mount Interaction (Horses & Zonai Hovercrafts)
+    const mountRes = this.mountSystem.toggleMount(playerPos);
+    if (mountRes.success) {
+      if (mountRes.mounted) {
+        this.physics.actionState = 'RIDE';
+        this.physics.velocity.set(0, 0, 0);
+      } else {
+        this.physics.actionState = 'IDLE';
+        const groundY = TerrainManager.getTerrainHeight(this.physics.position.x, this.physics.position.z);
+        this.physics.position.y = Math.max(groundY + 0.1, this.physics.position.y);
+      }
+      if (this.onToastMessage) this.onToastMessage(mountRes.message);
+      return mountRes.message;
+    }
+
+    // Check nearby Shrines or Chests
     for (const obj of this.collectibleManager.objects) {
       const { data, mesh } = obj;
       const dist = playerPos.distanceTo(mesh.position);

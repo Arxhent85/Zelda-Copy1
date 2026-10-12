@@ -251,4 +251,146 @@ export class CollectibleManager {
       }
     });
   }
+
+  public createChest(id: string, x: number, y: number, z: number): THREE.Group {
+    const chestGroup = new THREE.Group();
+    const woodMat = new THREE.MeshStandardMaterial({ color: 0x6e4726, roughness: 0.7 });
+    const goldTrim = new THREE.MeshStandardMaterial({ color: 0xffd700, metalness: 0.8 });
+
+    const box = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.9, 1.0), woodMat);
+    box.position.y = 0.45;
+    box.castShadow = true;
+    chestGroup.add(box);
+
+    const lid = new THREE.Mesh(new THREE.BoxGeometry(1.42, 0.3, 1.02), goldTrim);
+    lid.position.set(0, 0.9, 0);
+    lid.name = 'ChestLid';
+    chestGroup.add(lid);
+
+    chestGroup.position.set(x, y, z);
+    this.group.add(chestGroup);
+
+    const objData: WorldObjectType = {
+      id,
+      type: 'chest',
+      name: 'Schatztruhe',
+      position: { x, y, z },
+      opened: false,
+    };
+    this.objects.push({ data: objData, mesh: chestGroup });
+    return chestGroup;
+  }
+
+  public createCustomShrine(id: string, name: string, x: number, z: number): THREE.Group {
+    const y = TerrainManager.getTerrainHeight(x, z);
+    const shrineGroup = new THREE.Group();
+    const baseMat = new THREE.MeshStandardMaterial({ color: 0x3a424a, roughness: 0.8 });
+    const runeBlue = new THREE.MeshStandardMaterial({
+      color: 0x00f0ff,
+      emissive: 0x0088cc,
+      emissiveIntensity: 1.2,
+    });
+
+    const b1 = new THREE.Mesh(new THREE.BoxGeometry(10, 2, 10), baseMat);
+    b1.position.y = 1;
+    b1.castShadow = true;
+    shrineGroup.add(b1);
+
+    const b2 = new THREE.Mesh(new THREE.BoxGeometry(8, 2, 8), baseMat);
+    b2.position.y = 3;
+    b2.castShadow = true;
+    shrineGroup.add(b2);
+
+    const core = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 1.8, 2.5, 8), runeBlue);
+    core.position.y = 5.25;
+    shrineGroup.add(core);
+
+    const beamGeo = new THREE.CylinderGeometry(1.2, 1.2, 120, 16);
+    const beamMat = new THREE.MeshBasicMaterial({
+      color: 0x00f0ff,
+      transparent: true,
+      opacity: 0.35,
+      blending: THREE.AdditiveBlending,
+    });
+    const beam = new THREE.Mesh(beamGeo, beamMat);
+    beam.position.y = 60;
+    shrineGroup.add(beam);
+
+    shrineGroup.position.set(x, y, z);
+    this.group.add(shrineGroup);
+
+    const shrineData: ShrineData = {
+      id,
+      name,
+      region: 'Erschaffene Welt',
+      position: { x, y, z },
+      activated: true,
+      fastTravelUnlocked: true,
+      description: 'Ein vom Weltenbauer erschaffener Schrein.',
+    };
+    this.shrinesData.push(shrineData);
+
+    const objData: WorldObjectType = {
+      id,
+      type: 'shrine',
+      name,
+      position: { x, y, z },
+      activated: true,
+    };
+    this.objects.push({ data: objData, mesh: shrineGroup });
+    return shrineGroup;
+  }
+
+  /**
+   * Synchronize all shrines, chests, and rupees to terrain surface
+   */
+  public syncAllCollectiblesToTerrain() {
+    for (const shrine of this.shrinesData) {
+      const ny = TerrainManager.getTerrainHeight(shrine.position.x, shrine.position.z);
+      shrine.position.y = ny;
+      const obj = this.objects.find((o) => o.data.id === shrine.id);
+      if (obj) {
+        obj.mesh.position.y = ny;
+        obj.data.position.y = ny;
+      }
+    }
+
+    for (const obj of this.objects) {
+      if (obj.data.type === 'chest') {
+        const ny = TerrainManager.getTerrainHeight(obj.data.position.x, obj.data.position.z);
+        obj.data.position.y = ny;
+        obj.mesh.position.y = ny;
+      } else if (obj.data.type === 'rupee') {
+        const ny = TerrainManager.getTerrainHeight(obj.data.position.x, obj.data.position.z);
+        obj.data.position.y = ny + 0.8;
+        obj.mesh.position.y = ny + 0.8;
+      }
+    }
+  }
+
+  public syncCollectiblesInRadius(x: number, z: number, radius: number) {
+    const radSq = radius * radius;
+    for (const shrine of this.shrinesData) {
+      const dx = shrine.position.x - x;
+      const dz = shrine.position.z - z;
+      if (dx * dx + dz * dz < radSq) {
+        const ny = TerrainManager.getTerrainHeight(shrine.position.x, shrine.position.z);
+        shrine.position.y = ny;
+        const obj = this.objects.find((o) => o.data.id === shrine.id);
+        if (obj) {
+          obj.mesh.position.y = ny;
+          obj.data.position.y = ny;
+        }
+      }
+    }
+    for (const obj of this.objects) {
+      const dx = obj.data.position.x - x;
+      const dz = obj.data.position.z - z;
+      if (dx * dx + dz * dz < radSq) {
+        const ny = TerrainManager.getTerrainHeight(obj.data.position.x, obj.data.position.z);
+        obj.data.position.y = ny + (obj.data.type === 'rupee' ? 0.8 : 0);
+        obj.mesh.position.y = obj.data.position.y;
+      }
+    }
+  }
 }

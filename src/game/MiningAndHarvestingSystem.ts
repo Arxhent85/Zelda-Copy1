@@ -132,6 +132,85 @@ export class MiningAndHarvestingSystem {
         }
       }
     }
+
+    // 5. Enchanted Sakura Cherry Blossom Groves (East Riverbank & Hills)
+    const sakuraPositions = [
+      { x: 32, z: 24 },
+      { x: 40, z: 18 },
+      { x: 48, z: 32 },
+      { x: -65, z: 50 },
+      { x: -75, z: 62 },
+    ];
+    sakuraPositions.forEach((pt) => {
+      const y = TerrainManager.getTerrainHeight(pt.x, pt.z);
+      this.createSakuraTree(pt.x, y, pt.z);
+    });
+
+    // 6. Silver Birch Forests (North-East Birch Meadows)
+    const birchPositions = [
+      { x: 55, z: -35 },
+      { x: 68, z: -48 },
+      { x: 80, z: -30 },
+      { x: -45, z: -65 },
+      { x: -58, z: -80 },
+    ];
+    birchPositions.forEach((pt) => {
+      const y = TerrainManager.getTerrainHeight(pt.x, pt.z);
+      this.createBirchTree(pt.x, y, pt.z);
+    });
+
+    // 7. Crisp Apple Trees (Near Village Outpost & Starter Glade)
+    const applePositions = [
+      { x: -14, z: -5 },
+      { x: 25, z: -10 },
+      { x: -28, z: 30 },
+      { x: 12, z: 28 },
+    ];
+    applePositions.forEach((pt) => {
+      const y = TerrainManager.getTerrainHeight(pt.x, pt.z);
+      this.createAppleTree(pt.x, y, pt.z);
+    });
+
+    // 8. Sacred Silent Princess Flowers (Hidden in quiet clearings & near shrines)
+    const silentPrincessPositions = [
+      { x: 5, z: 16 },
+      { x: -18, z: 18 },
+      { x: 38, z: 28 },
+      { x: -60, z: 45 },
+      { x: 72, z: -55 },
+      { x: -120, z: -60 },
+    ];
+    silentPrincessPositions.forEach((pt) => {
+      const y = TerrainManager.getTerrainHeight(pt.x, pt.z);
+      this.createSilentPrincess(pt.x, y, pt.z);
+    });
+
+    // 9. Forest Mushrooms & Stamella Shroom Clusters (Near tree roots)
+    const shroomPositions = [
+      { x: 9, z: 7 },
+      { x: -11, z: 13 },
+      { x: 19, z: 16 },
+      { x: 26, z: -9 },
+      { x: -21, z: -11 },
+      { x: 42, z: 20 },
+    ];
+    shroomPositions.forEach((pt) => {
+      const y = TerrainManager.getTerrainHeight(pt.x, pt.z);
+      this.createShroomCluster(pt.x, y, pt.z);
+    });
+
+    // 10. Sweet Wild Berry Bushes (Edges of forests & hillsides)
+    const berryPositions = [
+      { x: 15, z: 4 },
+      { x: -7, z: 22 },
+      { x: 30, z: 12 },
+      { x: -32, z: -15 },
+      { x: 50, z: -20 },
+    ];
+    berryPositions.forEach((pt) => {
+      const y = TerrainManager.getTerrainHeight(pt.x, pt.z);
+      this.createBerryBush(pt.x, y, pt.z);
+    });
   }
 
   private createClayNode(x: number, y: number, z: number) {
@@ -252,64 +331,88 @@ export class MiningAndHarvestingSystem {
     this.nodes.push({ data: nodeData, mesh: nodeGroup });
   }
 
-  private createTreeNode(x: number, y: number, z: number, isOak: boolean = true) {
+  public createTreeNode(x: number, y: number, z: number, isOak: boolean = true): THREE.Group {
     const nodeGroup = new THREE.Group();
 
     // Wooden Trunk with flared root base
-    const trunkMat = new THREE.MeshStandardMaterial({ color: isOak ? 0x5c3d1e : 0x3d2712, roughness: 0.88 });
-    const trunkGeo = new THREE.CylinderGeometry(0.32, 0.62, 4.4, 8);
+    const trunkMat = new THREE.MeshStandardMaterial({ color: isOak ? 0x543618 : 0x382310, roughness: 0.88 });
+    const trunkGeo = new THREE.CylinderGeometry(0.34, 0.68, 4.6, 10);
     const trunk = new THREE.Mesh(trunkGeo, trunkMat);
-    trunk.position.y = 2.2;
+    trunk.position.y = 2.3;
     trunk.castShadow = true;
     trunk.receiveShadow = true;
     nodeGroup.add(trunk);
 
-    // Branch Forks
+    // Root buttresses spreading into terrain
+    for (let r = 0; r < 3; r++) {
+      const rootAngle = (r / 3) * Math.PI * 2 + 0.4;
+      const rootGeo = new THREE.ConeGeometry(0.24, 1.2, 5);
+      const root = new THREE.Mesh(rootGeo, trunkMat);
+      root.position.set(Math.cos(rootAngle) * 0.52, 0.45, Math.sin(rootAngle) * 0.52);
+      root.rotation.x = Math.sin(rootAngle) * 0.45;
+      root.rotation.z = -Math.cos(rootAngle) * 0.45;
+      root.castShadow = true;
+      nodeGroup.add(root);
+    }
+
+    // Branch Forks & Foliage Canopies
     if (isOak) {
-      const b1 = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.28, 1.8, 6), trunkMat);
-      b1.position.set(0.4, 3.8, 0.2);
-      b1.rotation.z = -Math.PI / 5;
+      const b1 = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.28, 2.0, 6), trunkMat);
+      b1.position.set(0.45, 3.9, 0.25);
+      b1.rotation.z = -Math.PI / 4.8;
       b1.castShadow = true;
       nodeGroup.add(b1);
 
-      const b2 = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.24, 1.6, 6), trunkMat);
-      b2.position.set(-0.35, 4.0, -0.2);
+      const b2 = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.24, 1.8, 6), trunkMat);
+      b2.position.set(-0.4, 4.1, -0.25);
       b2.rotation.z = Math.PI / 4.5;
       b2.castShadow = true;
       nodeGroup.add(b2);
 
-      // Lush Multi-Cluster Canopy
-      const greens = [0x2e7d32, 0x1b5e20, 0x388e3c, 0x226b28];
+      // Lush BotW Stylized Organic Leaf Clumps (Subdivided Icosahedrons for soft painterly shading)
+      const greens = [0x275922, 0x1d4719, 0x33742d, 0x245e1f, 0x3d8635];
       const clusterOffsets = [
-        { x: 0, y: 5.5, z: 0, r: 2.4, c: greens[0] },
-        { x: 1.1, y: 5.2, z: 0.8, r: 1.8, c: greens[1] },
-        { x: -1.0, y: 5.4, z: -0.7, r: 1.9, c: greens[2] },
-        { x: 0.7, y: 6.2, z: -0.9, r: 1.7, c: greens[3] },
-        { x: -0.8, y: 6.1, z: 0.9, r: 1.8, c: greens[0] },
-        { x: 0, y: 6.8, z: 0, r: 1.6, c: greens[2] },
+        { x: 0, y: 5.6, z: 0, r: 2.5, c: greens[0], sy: 0.92 },
+        { x: 1.2, y: 5.3, z: 0.8, r: 1.9, c: greens[1], sy: 0.88 },
+        { x: -1.1, y: 5.5, z: -0.7, r: 2.0, c: greens[2], sy: 0.88 },
+        { x: 0.8, y: 6.4, z: -0.9, r: 1.8, c: greens[3], sy: 0.90 },
+        { x: -0.85, y: 6.3, z: 0.9, r: 1.9, c: greens[4], sy: 0.88 },
+        { x: 0, y: 7.0, z: 0, r: 1.7, c: greens[2], sy: 0.94 },
       ];
 
       clusterOffsets.forEach((cl) => {
-        const mat = new THREE.MeshStandardMaterial({ color: cl.c, roughness: 0.65 });
-        const crown = new THREE.Mesh(new THREE.DodecahedronGeometry(cl.r, 1), mat);
+        const mat = new THREE.MeshStandardMaterial({
+          color: cl.c,
+          roughness: 0.65,
+          metalness: 0.05,
+          flatShading: false,
+        });
+        const crown = new THREE.Mesh(new THREE.IcosahedronGeometry(cl.r, 2), mat);
         crown.position.set(cl.x, cl.y, cl.z);
+        crown.scale.set(1.0, cl.sy, 1.0);
         crown.castShadow = true;
         crown.receiveShadow = true;
         nodeGroup.add(crown);
       });
     } else {
-      // Alpine Pine Canopy Tiers
-      const pineGreens = [0x1b4332, 0x2d6a4f, 0x081c15, 0x40916c];
+      // Alpine Pine Canopy Tiers with optional summit snow frosting
+      const isMountainSnowZone = y > 22.0;
+      const pineGreens = [0x133824, 0x1a462e, 0x0c2518, 0x22583b];
+      const snowWhite = 0xf0f7ff;
       const tiers = [
-        { y: 4.8, r: 2.8, h: 3.8, c: pineGreens[0] },
-        { y: 6.4, r: 2.2, h: 3.2, c: pineGreens[1] },
-        { y: 7.8, r: 1.6, h: 2.6, c: pineGreens[2] },
-        { y: 9.0, r: 1.0, h: 2.0, c: pineGreens[3] },
+        { y: 4.8, r: 3.0, h: 3.8, c: pineGreens[0] },
+        { y: 6.5, r: 2.4, h: 3.2, c: pineGreens[1] },
+        { y: 8.0, r: 1.7, h: 2.6, c: isMountainSnowZone ? snowWhite : pineGreens[2] },
+        { y: 9.3, r: 1.1, h: 2.0, c: isMountainSnowZone ? snowWhite : pineGreens[3] },
       ];
 
       tiers.forEach((t) => {
-        const mat = new THREE.MeshStandardMaterial({ color: t.c, roughness: 0.7 });
-        const cone = new THREE.Mesh(new THREE.ConeGeometry(t.r, t.h, 7), mat);
+        const mat = new THREE.MeshStandardMaterial({
+          color: t.c,
+          roughness: 0.72,
+          metalness: 0.05,
+        });
+        const cone = new THREE.Mesh(new THREE.ConeGeometry(t.r, t.h, 9), mat);
         cone.position.y = t.y;
         cone.castShadow = true;
         cone.receiveShadow = true;
@@ -343,9 +446,10 @@ export class MiningAndHarvestingSystem {
       height: 7.5,
       radius: 0.45,
     });
+    return nodeGroup;
   }
 
-  private createOreNode(x: number, y: number, z: number, config: any) {
+  public createOreNode(x: number, y: number, z: number, config: any): THREE.Group {
     const nodeGroup = new THREE.Group();
 
     // Dark slate rock matrix base
@@ -401,9 +505,10 @@ export class MiningAndHarvestingSystem {
       height: 1.5,
       radius: 1.1,
     });
+    return nodeGroup;
   }
 
-  private createRockNode(x: number, y: number, z: number) {
+  public createRockNode(x: number, y: number, z: number): THREE.Group {
     const nodeGroup = new THREE.Group();
     const rockMat = new THREE.MeshStandardMaterial({ color: 0x64748b, roughness: 0.82 });
 
@@ -437,6 +542,281 @@ export class MiningAndHarvestingSystem {
       height: 1.2,
       radius: 1.0,
     });
+    return nodeGroup;
+  }
+
+  public createSakuraTree(x: number, y: number, z: number): THREE.Group {
+    const nodeGroup = new THREE.Group();
+    const trunkMat = new THREE.MeshStandardMaterial({ color: 0x3d2817, roughness: 0.9 });
+    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.36, 0.65, 4.8, 8), trunkMat);
+    trunk.position.y = 2.4;
+    trunk.rotation.z = (Math.random() - 0.5) * 0.15;
+    trunk.castShadow = true;
+    nodeGroup.add(trunk);
+
+    for (const side of [-1, 1]) {
+      const b = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.28, 2.2, 6), trunkMat);
+      b.position.set(side * 0.5, 4.2, 0);
+      b.rotation.z = side * -0.55;
+      b.castShadow = true;
+      nodeGroup.add(b);
+    }
+
+    const pinkPinks = [0xf472b6, 0xfbcfe8, 0xf9a8d4];
+    const blossomGeo = new THREE.DodecahedronGeometry(1.6, 1);
+    const blossomMat1 = new THREE.MeshStandardMaterial({ color: pinkPinks[0], roughness: 0.65 });
+    const blossomMat2 = new THREE.MeshStandardMaterial({ color: pinkPinks[1], roughness: 0.65 });
+    const blossomMat3 = new THREE.MeshStandardMaterial({ color: pinkPinks[2], roughness: 0.65 });
+
+    const cl1 = new THREE.Mesh(blossomGeo, blossomMat1);
+    cl1.position.set(0, 5.8, 0);
+    cl1.scale.set(1.4, 1.1, 1.4);
+    cl1.castShadow = true;
+    nodeGroup.add(cl1);
+
+    const cl2 = new THREE.Mesh(blossomGeo, blossomMat2);
+    cl2.position.set(1.4, 5.4, 0.8);
+    cl2.scale.set(1.1, 0.9, 1.1);
+    cl2.castShadow = true;
+    nodeGroup.add(cl2);
+
+    const cl3 = new THREE.Mesh(blossomGeo, blossomMat3);
+    cl3.position.set(-1.3, 5.6, -0.7);
+    cl3.scale.set(1.2, 0.95, 1.2);
+    cl3.castShadow = true;
+    nodeGroup.add(cl3);
+
+    nodeGroup.position.set(x, y, z);
+    this.group.add(nodeGroup);
+
+    const nodeData: HarvestableNode = {
+      id: `sakura_${Math.random()}`,
+      type: 'tree_sakura',
+      position: { x, y, z },
+      health: 100,
+      maxHealth: 100,
+      requiredTool: 'axe',
+      minTier: 'wood',
+      yieldItem: 'Kirschblütenholz',
+      yieldQuantity: 4,
+      isFallen: false,
+    };
+
+    this.nodes.push({ data: nodeData, mesh: nodeGroup });
+    this.obstacles.push({
+      id: nodeData.id,
+      type: 'tree',
+      x,
+      z,
+      yBase: y,
+      height: 7.5,
+      radius: 0.5,
+    });
+    return nodeGroup;
+  }
+
+  public createBirchTree(x: number, y: number, z: number): THREE.Group {
+    const nodeGroup = new THREE.Group();
+    const birchMat = new THREE.MeshStandardMaterial({ color: 0xf1f5f9, roughness: 0.7 });
+    const darkNotchMat = new THREE.MeshStandardMaterial({ color: 0x18181b, roughness: 0.9 });
+    const leafMat = new THREE.MeshStandardMaterial({ color: 0x84cc16, roughness: 0.7 });
+
+    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.38, 5.8, 8), birchMat);
+    trunk.position.y = 2.9;
+    trunk.castShadow = true;
+    nodeGroup.add(trunk);
+
+    for (let n = 0; n < 5; n++) {
+      const notch = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.08, 0.52), darkNotchMat);
+      notch.position.set(0, 1.2 + n * 0.9, 0);
+      notch.rotation.y = n * 1.3;
+      nodeGroup.add(notch);
+    }
+
+    const crown1 = new THREE.Mesh(new THREE.ConeGeometry(2.0, 4.2, 7), leafMat);
+    crown1.position.y = 6.2;
+    crown1.castShadow = true;
+    nodeGroup.add(crown1);
+
+    nodeGroup.position.set(x, y, z);
+    this.group.add(nodeGroup);
+
+    const nodeData: HarvestableNode = {
+      id: `birch_${Math.random()}`,
+      type: 'tree_birch',
+      position: { x, y, z },
+      health: 80,
+      maxHealth: 80,
+      requiredTool: 'axe',
+      minTier: 'wood',
+      yieldItem: 'Birkenholz',
+      yieldQuantity: 4,
+      isFallen: false,
+    };
+
+    this.nodes.push({ data: nodeData, mesh: nodeGroup });
+    this.obstacles.push({
+      id: nodeData.id,
+      type: 'tree',
+      x,
+      z,
+      yBase: y,
+      height: 8.0,
+      radius: 0.4,
+    });
+    return nodeGroup;
+  }
+
+  public createAppleTree(x: number, y: number, z: number): THREE.Group {
+    const nodeGroup = this.createTreeNode(x, y, z, true);
+    const appleMat = new THREE.MeshStandardMaterial({ color: 0xef4444, roughness: 0.3, metalness: 0.1 });
+    const appleOffsets = [
+      { x: 0.9, y: 4.8, z: 0.6 },
+      { x: -0.8, y: 4.7, z: 0.7 },
+      { x: 0.4, y: 4.9, z: -0.9 },
+      { x: -0.6, y: 5.0, z: -0.8 },
+      { x: 1.1, y: 5.2, z: -0.3 },
+      { x: -1.0, y: 5.1, z: 0.2 },
+    ];
+    appleOffsets.forEach((ao) => {
+      const apple = new THREE.Mesh(new THREE.SphereGeometry(0.18, 8, 8), appleMat);
+      apple.position.set(ao.x, ao.y, ao.z);
+      apple.castShadow = true;
+      nodeGroup.add(apple);
+    });
+
+    const targetNode = this.nodes.find((n) => n.mesh === nodeGroup);
+    if (targetNode) {
+      targetNode.data.type = 'tree_apple';
+      targetNode.data.yieldItem = 'Knackiger Apfel';
+      targetNode.data.yieldQuantity = 3;
+    }
+    return nodeGroup;
+  }
+
+  public createSilentPrincess(x: number, y: number, z: number): THREE.Group {
+    const nodeGroup = new THREE.Group();
+    const stemMat = new THREE.MeshStandardMaterial({ color: 0x15803d, roughness: 0.8 });
+    const petalMat = new THREE.MeshStandardMaterial({
+      color: 0x38bdf8,
+      emissive: 0x0284c7,
+      emissiveIntensity: 2.5,
+      roughness: 0.2,
+    });
+    const whitePetalMat = new THREE.MeshStandardMaterial({
+      color: 0xf8fafc,
+      emissive: 0xbae6fd,
+      emissiveIntensity: 1.5,
+    });
+
+    const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.05, 0.9, 6), stemMat);
+    stem.position.y = 0.45;
+    stem.rotation.z = (Math.random() - 0.5) * 0.2;
+    nodeGroup.add(stem);
+
+    for (let p = 0; p < 5; p++) {
+      const angle = (p / 5) * Math.PI * 2;
+      const petal = new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.45, 4), p % 2 === 0 ? petalMat : whitePetalMat);
+      petal.position.set(Math.cos(angle) * 0.22, 0.88, Math.sin(angle) * 0.22);
+      petal.rotation.set(Math.sin(angle) * 0.85, 0, -Math.cos(angle) * 0.85);
+      nodeGroup.add(petal);
+    }
+
+    const glow = new THREE.PointLight(0x38bdf8, 2.0, 6);
+    glow.position.set(0, 0.9, 0);
+    nodeGroup.add(glow);
+
+    nodeGroup.position.set(x, y, z);
+    this.group.add(nodeGroup);
+
+    const nodeData: HarvestableNode = {
+      id: `flower_${Math.random()}`,
+      type: 'flower_silent_princess',
+      position: { x, y, z },
+      health: 15,
+      maxHealth: 15,
+      yieldItem: 'Prinzessinnen-Enzian',
+      yieldQuantity: 1,
+    };
+    this.nodes.push({ data: nodeData, mesh: nodeGroup });
+    return nodeGroup;
+  }
+
+  public createShroomCluster(x: number, y: number, z: number): THREE.Group {
+    const nodeGroup = new THREE.Group();
+    const stemMat = new THREE.MeshStandardMaterial({ color: 0xfef08a, roughness: 0.8 });
+    const redCapMat = new THREE.MeshStandardMaterial({ color: 0xef4444, roughness: 0.5 });
+    const greenCapMat = new THREE.MeshStandardMaterial({ color: 0x10b981, roughness: 0.5 });
+
+    const shroomCoords = [
+      { x: 0, z: 0, r: 0.28, h: 0.5, mat: redCapMat },
+      { x: 0.35, z: 0.2, r: 0.22, h: 0.4, mat: greenCapMat },
+      { x: -0.28, z: 0.3, r: 0.18, h: 0.35, mat: redCapMat },
+    ];
+
+    shroomCoords.forEach((sc) => {
+      const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.08, sc.h, 6), stemMat);
+      stem.position.set(sc.x, sc.h * 0.5, sc.z);
+      nodeGroup.add(stem);
+
+      const cap = new THREE.Mesh(new THREE.SphereGeometry(sc.r, 8, 8), sc.mat);
+      cap.position.set(sc.x, sc.h + 0.05, sc.z);
+      cap.scale.set(1.2, 0.7, 1.2);
+      cap.castShadow = true;
+      nodeGroup.add(cap);
+    });
+
+    nodeGroup.position.set(x, y, z);
+    this.group.add(nodeGroup);
+
+    const nodeData: HarvestableNode = {
+      id: `shroom_${Math.random()}`,
+      type: 'shroom_cluster',
+      position: { x, y, z },
+      health: 15,
+      maxHealth: 15,
+      yieldItem: 'Hylia-Pilz',
+      yieldQuantity: 2,
+    };
+    this.nodes.push({ data: nodeData, mesh: nodeGroup });
+    return nodeGroup;
+  }
+
+  public createBerryBush(x: number, y: number, z: number): THREE.Group {
+    const nodeGroup = new THREE.Group();
+    const bushMat = new THREE.MeshStandardMaterial({ color: 0x166534, roughness: 0.8 });
+    const berryMat = new THREE.MeshStandardMaterial({ color: 0xdc2626, roughness: 0.3 });
+
+    const bush = new THREE.Mesh(new THREE.DodecahedronGeometry(0.9, 1), bushMat);
+    bush.position.y = 0.55;
+    bush.scale.set(1.2, 0.8, 1.2);
+    bush.castShadow = true;
+    nodeGroup.add(bush);
+
+    for (let b = 0; b < 8; b++) {
+      const berry = new THREE.Mesh(new THREE.SphereGeometry(0.09, 6, 6), berryMat);
+      berry.position.set(
+        (Math.random() - 0.5) * 1.1,
+        0.4 + Math.random() * 0.5,
+        (Math.random() - 0.5) * 1.1
+      );
+      nodeGroup.add(berry);
+    }
+
+    nodeGroup.position.set(x, y, z);
+    this.group.add(nodeGroup);
+
+    const nodeData: HarvestableNode = {
+      id: `berry_${Math.random()}`,
+      type: 'berry_bush',
+      position: { x, y, z },
+      health: 20,
+      maxHealth: 20,
+      yieldItem: 'Waldbeeren',
+      yieldQuantity: 3,
+    };
+    this.nodes.push({ data: nodeData, mesh: nodeGroup });
+    return nodeGroup;
   }
 
   /**
@@ -642,5 +1022,46 @@ export class MiningAndHarvestingSystem {
 
     posAttr.needsUpdate = true;
     colAttr.needsUpdate = true;
+  }
+
+  /**
+   * Synchronize all harvestable resource nodes (trees, rocks, ores, crops) directly to terrain surface
+   */
+  public syncAllNodesToTerrain() {
+    for (const n of this.nodes) {
+      const ny = TerrainManager.getTerrainHeight(n.data.position.x, n.data.position.z);
+      n.data.position.y = ny;
+      n.mesh.position.y = ny;
+
+      const obs = this.obstacles.find(
+        (o) => o.id === n.data.id || (Math.abs(o.x - n.data.position.x) < 0.1 && Math.abs(o.z - n.data.position.z) < 0.1)
+      );
+      if (obs) {
+        obs.yBase = ny;
+      }
+    }
+  }
+
+  /**
+   * Synchronize nodes within radius (e.g. terraforming brush or shovel dig)
+   */
+  public syncNodesInRadius(x: number, z: number, radius: number) {
+    const radSq = radius * radius;
+    for (const n of this.nodes) {
+      const dx = n.data.position.x - x;
+      const dz = n.data.position.z - z;
+      if (dx * dx + dz * dz < radSq) {
+        const ny = TerrainManager.getTerrainHeight(n.data.position.x, n.data.position.z);
+        n.data.position.y = ny;
+        n.mesh.position.y = ny;
+
+        const obs = this.obstacles.find(
+          (o) => o.id === n.data.id || (Math.abs(o.x - n.data.position.x) < 0.1 && Math.abs(o.z - n.data.position.z) < 0.1)
+        );
+        if (obs) {
+          obs.yBase = ny;
+        }
+      }
+    }
   }
 }

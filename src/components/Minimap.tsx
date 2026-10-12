@@ -113,10 +113,10 @@ export const Minimap: React.FC<MinimapProps> = ({
   return (
     <div
       onClick={onOpenFullMap}
-      className="pointer-events-auto absolute bottom-4 right-4 z-10 h-28 w-28 cursor-pointer rounded-full bg-slate-950/80 p-1 shadow-2xl backdrop-blur-md transition hover:scale-105 border border-white/20"
-      title="Click to view Full World Map"
+      className="pointer-events-auto absolute top-14 right-4 z-20 h-24 w-24 cursor-pointer rounded-full bg-slate-950/85 p-1 shadow-2xl backdrop-blur-md transition hover:scale-105 active:scale-95 border border-white/20"
+      title="Karte antippen für Vollbild-Weltkarte mit Schnellreise"
     >
-      <canvas ref={canvasRef} width={104} height={104} className="h-full w-full rounded-full" />
+      <canvas ref={canvasRef} width={88} height={88} className="h-full w-full rounded-full" />
     </div>
   );
 };

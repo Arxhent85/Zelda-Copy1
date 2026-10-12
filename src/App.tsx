@@ -8,9 +8,12 @@ import { FullMapModal } from './components/FullMapModal';
 import { InventoryModal } from './components/InventoryModal';
 import { CraftingModal } from './components/CraftingModal';
 import { SettingsModal } from './components/SettingsModal';
+import { StartMenuModal } from './components/StartMenuModal';
+import { QuickMenuModal } from './components/QuickMenuModal';
+import { LevelEditorUI } from './components/LevelEditorUI';
 import { GameEngine } from './game/GameEngine';
-import { DamageText, GameSettings, PlayerStats, ShrineData, Vector3D } from './types';
-import { RefreshCw, Play, RotateCw, Check, X } from 'lucide-react';
+import { DamageText, GameSettings, PlayerStats, ShrineData, Vector3D, AvatarVariant, WorldCreationOptions } from './types';
+import { RefreshCw, Play, RotateCw, Check, X, Mountain, Compass } from 'lucide-react';
 
 export default function App() {
   const [engine, setEngine] = useState<GameEngine | null>(null);
@@ -59,11 +62,15 @@ export default function App() {
   const [touchMoveDir, setTouchMoveDir] = useState<{ x: number; z: number }>({ x: 0, z: 0 });
 
   // Modals state
+  const [isQuickMenuOpen, setIsQuickMenuOpen] = useState<boolean>(false);
+  const [isStartMenuOpen, setIsStartMenuOpen] = useState<boolean>(true);
+  const [avatarVariant, setAvatarVariant] = useState<AvatarVariant>('hylian_hero');
   const [isMapOpen, setIsMapOpen] = useState<boolean>(false);
   const [isInventoryOpen, setIsInventoryOpen] = useState<boolean>(false);
   const [isCraftingOpen, setIsCraftingOpen] = useState<boolean>(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
   const [isBuildActive, setIsBuildActive] = useState<boolean>(false);
+  const [isEditorActive, setIsEditorActive] = useState<boolean>(false);
 
   // Settings
   const [settings, setSettings] = useState<GameSettings>({
@@ -75,6 +82,9 @@ export default function App() {
     cameraSensitivity: 0.003,
     invertY: false,
     touchControls: true,
+    timeOfDay: 12.0,
+    isTimeCycleActive: true,
+    timeCycleSpeed: 1.0,
   });
 
   // Target lock reticle position
@@ -116,6 +126,28 @@ export default function App() {
     showToast('Bau-Modus Beendet');
   }, [engine, showToast]);
 
+  const handleToggleEditor = useCallback(() => {
+    if (!engine) return;
+    const next = engine.toggleEditor();
+    setIsEditorActive(next);
+    showToast(next ? '🛠️ Welten-Editor Aktiv' : '🎮 Spiel-Modus Aktiv');
+  }, [engine, showToast]);
+
+  const handleSelectAvatar = useCallback((variant: AvatarVariant) => {
+    setAvatarVariant(variant);
+    if (engine) {
+      engine.setAvatarVariant(variant);
+    }
+  }, [engine]);
+
+  const handleCreateWorld = useCallback((options: WorldCreationOptions) => {
+    setAvatarVariant(options.avatarVariant);
+    if (engine) {
+      engine.applyWorldCreation(options);
+    }
+    setIsStartMenuOpen(false);
+  }, [engine]);
+
   // Global Keyboard shortcuts for Modals & Actions
   useEffect(() => {
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
@@ -125,6 +157,10 @@ export default function App() {
         setIsInventoryOpen((prev) => !prev);
       } else if (e.code === 'KeyC') {
         setIsCraftingOpen((prev) => !prev);
+      } else if (e.code === 'KeyP') {
+        setIsQuickMenuOpen((prev) => !prev);
+      } else if (e.code === 'KeyL' || e.code === 'F2') {
+        handleToggleEditor();
       } else if (e.code === 'KeyU') {
         handleUpgradeSettlement();
       } else if (e.code === 'KeyB') {
@@ -147,10 +183,18 @@ export default function App() {
           showToast(msg);
         }
       } else if (e.code === 'Escape') {
-        setIsMapOpen(false);
-        setIsInventoryOpen(false);
-        setIsCraftingOpen(false);
-        setIsSettingsOpen(false);
+        if (isQuickMenuOpen) {
+          setIsQuickMenuOpen(false);
+        } else if (isStartMenuOpen) {
+          setIsStartMenuOpen(false);
+        } else if (isMapOpen || isInventoryOpen || isCraftingOpen || isSettingsOpen) {
+          setIsMapOpen(false);
+          setIsInventoryOpen(false);
+          setIsCraftingOpen(false);
+          setIsSettingsOpen(false);
+        } else {
+          setIsQuickMenuOpen(true);
+        }
         if (isBuildActive) {
           handleCancelBuild();
         }
@@ -158,7 +202,7 @@ export default function App() {
     };
     window.addEventListener('keydown', handleGlobalKeyDown);
     return () => window.removeEventListener('keydown', handleGlobalKeyDown);
-  }, [engine, isBuildActive, showToast, handleCancelBuild]);
+  }, [engine, isBuildActive, isQuickMenuOpen, isStartMenuOpen, isMapOpen, isInventoryOpen, isCraftingOpen, isSettingsOpen, showToast, handleCancelBuild, handleToggleEditor]);
 
   // Right-click to cancel build mode
   useEffect(() => {
@@ -285,19 +329,31 @@ export default function App() {
       {/* 3D WebGL Canvas Layer */}
       <GameCanvas settings={settings} onEngineReady={handleEngineReady} moveInput={touchMoveDir} />
 
-      {/* React HUD Layer */}
-      <HUD
-        stats={stats}
-        stamina={stats.stamina}
-        maxStamina={stats.maxStamina}
-        timeOfDay={timeOfDay}
-        damageTexts={damageTexts}
-        toastMessage={toastMessage}
-        targetEnemyPos={targetScreenPos}
+      {/* Level Editor UI Layer */}
+      <LevelEditorUI
+        engine={engine}
+        isOpen={isEditorActive}
+        onExitEditor={handleToggleEditor}
+        onToast={showToast}
       />
 
+      {/* React HUD Layer - Hidden during editor mode for clean view */}
+      {!isEditorActive && (
+        <HUD
+          stats={stats}
+          stamina={stats.stamina}
+          maxStamina={stats.maxStamina}
+          timeOfDay={timeOfDay}
+          damageTexts={damageTexts}
+          toastMessage={toastMessage}
+          targetEnemyPos={targetScreenPos}
+          trackRace={engine?.trackRace}
+          onOpenQuickMenu={() => setIsQuickMenuOpen(true)}
+        />
+      )}
+
       {/* Top Floating Build Mode Toolbar Banner */}
-      {isBuildActive && engine && (
+      {isBuildActive && engine && !isEditorActive && (
         <div className="absolute top-16 left-1/2 z-40 -translate-x-1/2 flex items-center gap-2 sm:gap-3 rounded-2xl border border-cyan-400/60 bg-slate-950/95 px-4 sm:px-5 py-2 sm:py-2.5 shadow-2xl backdrop-blur-md animate-fade-in max-w-[92vw]">
           <div className="flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm font-bold text-cyan-300 whitespace-nowrap">
             <span className="text-base sm:text-lg animate-pulse">🔨</span>
@@ -326,7 +382,7 @@ export default function App() {
       )}
 
       {/* Catan Settlement Upgrade Prompt */}
-      {engine && engine.buildingSystem.getNearbySettlementToUpgrade(new THREE.Vector3(playerPos.x, playerPos.y, playerPos.z)) && (
+      {engine && !isEditorActive && engine.buildingSystem.getNearbySettlementToUpgrade(new THREE.Vector3(playerPos.x, playerPos.y, playerPos.z)) && (
         <div className="absolute bottom-28 left-1/2 z-30 -translate-x-1/2 flex items-center gap-3 rounded-2xl border border-amber-400/60 bg-slate-950/90 px-5 py-3 shadow-2xl backdrop-blur-md animate-bounce">
           <div className="text-2xl">🛖 ➔ 🏰</div>
           <div>
@@ -343,17 +399,20 @@ export default function App() {
       )}
 
       {/* Minimap Radar */}
-      <Minimap
-        playerPos={playerPos}
-        playerRotation={playerRotation}
-        shrines={shrines}
-        enemies={enemiesList}
-        chests={chestsList}
-        onOpenFullMap={() => setIsMapOpen(true)}
-      />
+      {!isEditorActive && (
+        <Minimap
+          playerPos={playerPos}
+          playerRotation={playerRotation}
+          shrines={shrines}
+          enemies={enemiesList}
+          chests={chestsList}
+          onOpenFullMap={() => setIsMapOpen(true)}
+        />
+      )}
 
       {/* Virtual Dual Touch Controls Cluster */}
       <VirtualTouchControls
+        isEditorActive={isEditorActive}
         onMove={(x, z) => setTouchMoveDir({ x, z })}
         onCameraRotate={(dx, dy) => {
           if (engine) engine.cameraControls.handleMouseMove(dx, dy);
@@ -366,20 +425,38 @@ export default function App() {
         }}
         onJumpGlide={() => {
           if (engine) {
-            if (engine.physics.isGrounded) {
-              engine.physics.velocity.y = 12.0;
+            if (engine.physics.isSwimming) {
+              // 🐬 DELPHIN-SPRUNG AUS DEM WASSER!
+              engine.physics.velocity.y = 16.5;
+              const swimDir = new THREE.Vector3(Math.sin(engine.physics.rotation), 0, Math.cos(engine.physics.rotation));
+              engine.physics.velocity.add(swimDir.multiplyScalar(8.0));
+              engine.physics.isSwimming = false;
               engine.physics.isGrounded = false;
+              engine.physics.actionState = 'JUMP';
+              engine.physics.hasDoubleJumped = false;
+              audioEngine.playWaterSplash();
+            } else if (engine.physics.isGrounded) {
+              engine.physics.velocity.y = 14.5;
+              engine.physics.isGrounded = false;
+              engine.physics.actionState = 'JUMP';
             } else {
-              engine.physics.isFlying = !engine.physics.isFlying;
-              engine.physics.isGliding = engine.physics.isFlying;
+              // Mid-air: toggle soaring flight / paraglider
+              engine.physics.toggleFlight();
             }
           }
         }}
         onFlyToggle={() => {
           if (engine) {
-            engine.physics.triggerFlightBoost();
-            showToast('🚀 FLIEGEN AKTIVIERT!');
+            const isNowFlying = engine.physics.toggleFlight();
+            showToast(isNowFlying ? '🚀 FLIEGEN AKTIVIERT!' : '🪂 FLIEGEN BEENDET');
           }
+        }}
+        isFlying={engine ? (engine.physics.isFlying || engine.physics.isGliding) : false}
+        onAscend={(active) => {
+          if (engine) engine.physics.isAscending = active;
+        }}
+        onDescend={(active) => {
+          if (engine) engine.physics.isDescending = active;
         }}
         onSprintDodge={(sprint) => {
           if (engine && !sprint) {
@@ -409,9 +486,7 @@ export default function App() {
             }
           }
         }}
-        onOpenMap={() => setIsMapOpen(true)}
-        onOpenInventory={() => setIsInventoryOpen(true)}
-        onOpenSettings={() => setIsSettingsOpen(true)}
+        isBowEquipped={engine ? engine.inventory.some((i) => i.equipped && (i.id.includes('bow') || i.name.toLowerCase().includes('bogen'))) : false}
         onMineHarvest={handleMineHarvest}
         onOpenCrafting={() => setIsCraftingOpen(true)}
         isBuildModeActive={isBuildActive}
@@ -421,6 +496,29 @@ export default function App() {
       />
 
       {/* Modals */}
+      <QuickMenuModal
+        isOpen={isQuickMenuOpen}
+        onClose={() => setIsQuickMenuOpen(false)}
+        onOpenMap={() => setIsMapOpen(true)}
+        onOpenInventory={() => setIsInventoryOpen(true)}
+        onOpenCrafting={() => setIsCraftingOpen(true)}
+        onOpenStartMenu={() => setIsStartMenuOpen(true)}
+        onOpenEditor={handleToggleEditor}
+        onOpenSettings={() => setIsSettingsOpen(true)}
+      />
+
+      <StartMenuModal
+        isOpen={isStartMenuOpen}
+        onClose={() => setIsStartMenuOpen(false)}
+        onOpenSettings={() => {
+          setIsStartMenuOpen(false);
+          setIsSettingsOpen(true);
+        }}
+        currentVariant={avatarVariant}
+        onSelectAvatar={handleSelectAvatar}
+        onCreateWorld={handleCreateWorld}
+      />
+
       <FullMapModal
         isOpen={isMapOpen}
         onClose={() => setIsMapOpen(false)}
@@ -452,7 +550,21 @@ export default function App() {
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
         settings={settings}
-        onUpdateSettings={(newS) => setSettings((prev) => ({ ...prev, ...newS }))}
+        onUpdateSettings={(newS) => {
+          setSettings((prev) => ({ ...prev, ...newS }));
+          if (engine) {
+            if (newS.timeOfDay !== undefined) {
+              engine.skyLighting.setTimeOfDay(newS.timeOfDay);
+              setTimeOfDay(newS.timeOfDay);
+            }
+            if (newS.isTimeCycleActive !== undefined) {
+              engine.skyLighting.setTimeCycleActive(newS.isTimeCycleActive);
+            }
+            if (newS.timeCycleSpeed !== undefined) {
+              engine.skyLighting.setTimeSpeed(newS.timeCycleSpeed);
+            }
+          }
+        }}
       />
 
       {/* Game Over Screen */}
