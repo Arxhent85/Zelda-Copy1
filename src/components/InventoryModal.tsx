@@ -20,28 +20,28 @@ export const InventoryModal: React.FC<InventoryModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/90 p-4 backdrop-blur-xl animate-fade-in">
-      <div className="relative flex h-[85vh] w-[95vw] max-w-4xl flex-col rounded-3xl border border-amber-500/30 bg-slate-900/90 p-6 text-slate-100 shadow-2xl overflow-hidden">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/90 p-2 sm:p-4 backdrop-blur-xl animate-fade-in select-none">
+      <div className="relative flex max-h-[92dvh] w-full max-w-4xl flex-col rounded-2xl sm:rounded-3xl border border-amber-500/30 bg-slate-900/90 p-3.5 sm:p-6 text-slate-100 shadow-2xl overflow-hidden">
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-white/10 pb-4">
-          <div className="flex items-center gap-2.5">
-            <Sparkles className="h-6 w-6 text-amber-400" />
-            <h2 className="text-xl font-bold tracking-wide text-white">Inventar & Ausrüstung</h2>
+        <div className="shrink-0 flex items-center justify-between border-b border-white/10 pb-2.5 sm:pb-3">
+          <div className="flex items-center gap-2 sm:gap-2.5">
+            <Sparkles className="h-5 w-5 sm:h-6 sm:w-6 text-amber-400" />
+            <h2 className="text-base sm:text-xl font-bold tracking-wide text-white">Inventar & Ausrüstung</h2>
           </div>
           <button
             onClick={onClose}
-            className="rounded-full bg-slate-800 p-2 text-slate-400 transition hover:bg-slate-700 hover:text-white"
+            className="rounded-full bg-slate-800 p-1.5 sm:p-2 text-slate-400 transition hover:bg-slate-700 hover:text-white"
           >
-            <X className="h-5 w-5" />
+            <X className="h-4 w-4 sm:h-5 sm:w-5" />
           </button>
         </div>
 
         {/* Item Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 flex-1 py-4 overflow-y-auto pr-1">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 sm:gap-4 flex-1 min-h-0 py-2.5 sm:py-4 overflow-y-auto pr-1">
           {items.map((item) => (
             <div
               key={item.id}
-              className={`flex flex-col justify-between rounded-2xl p-4 border transition ${
+              className={`flex flex-col justify-between rounded-xl sm:rounded-2xl p-3 sm:p-4 border transition ${
                 item.equipped
                   ? 'border-amber-400 bg-amber-950/30 shadow-lg shadow-amber-500/10'
                   : 'border-white/10 bg-slate-800/40 hover:border-slate-600'

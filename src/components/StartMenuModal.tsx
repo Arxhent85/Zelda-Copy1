@@ -102,18 +102,18 @@ export const StartMenuModal: React.FC<StartMenuModalProps> = ({
   ];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/85 backdrop-blur-xl p-4 sm:p-6 overflow-y-auto animate-fade-in font-sans">
-      <div className="relative w-full max-w-3xl rounded-3xl border border-cyan-500/30 bg-gradient-to-b from-slate-900/95 via-slate-950/98 to-slate-900/95 p-6 sm:p-8 shadow-2xl backdrop-blur-2xl text-white">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/85 backdrop-blur-xl p-2 sm:p-4 md:p-6 select-none animate-fade-in font-sans">
+      <div className="relative w-full max-w-3xl max-h-[92dvh] flex flex-col rounded-2xl sm:rounded-3xl border border-cyan-500/30 bg-gradient-to-b from-slate-900/95 via-slate-950/98 to-slate-900/95 p-3.5 sm:p-6 md:p-7 shadow-2xl backdrop-blur-2xl text-white">
         
-        {/* Decorative Top Crest */}
-        <div className="text-center mb-6">
-          <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-tr from-cyan-600 to-blue-500 shadow-lg shadow-cyan-500/30 border border-cyan-400/50 mb-3 animate-pulse">
-            <span className="text-2xl">▲</span>
+        {/* Decorative Top Crest - Adaptive sizing for small/landscape screens */}
+        <div className="shrink-0 text-center mb-2.5 sm:mb-4 md:mb-5">
+          <div className="inline-flex items-center justify-center w-9 h-9 sm:w-11 sm:h-11 md:w-13 md:h-13 rounded-xl sm:rounded-2xl bg-gradient-to-tr from-cyan-600 to-blue-500 shadow-lg shadow-cyan-500/30 border border-cyan-400/50 mb-1.5 sm:mb-2 animate-pulse">
+            <span className="text-lg sm:text-xl md:text-2xl">▲</span>
           </div>
-          <h1 className="text-3xl sm:text-4xl font-extrabold tracking-wider bg-gradient-to-r from-amber-300 via-yellow-200 to-amber-400 bg-clip-text text-transparent">
+          <h1 className="text-xl sm:text-2xl md:text-3xl font-extrabold tracking-wider bg-gradient-to-r from-amber-300 via-yellow-200 to-amber-400 bg-clip-text text-transparent">
             HYRULE REALMS
           </h1>
-          <p className="text-xs sm:text-sm text-cyan-200/80 mt-1 font-medium tracking-wide">
+          <p className="text-[10px] sm:text-xs text-cyan-200/80 mt-0.5 font-medium tracking-wide">
             Das Vermächtnis von Breath of the Wild & Catan
           </p>
         </div>
@@ -122,81 +122,83 @@ export const StartMenuModal: React.FC<StartMenuModalProps> = ({
         {/* VIEW: MAIN START MENU                                      */}
         {/* ----------------------------------------------------------- */}
         {tab === 'main' && (
-          <div className="space-y-4 max-w-md mx-auto">
-            {/* 1. Spiel starten */}
-            <button
-              onClick={onClose}
-              className="w-full group flex items-center justify-between p-4 rounded-2xl bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 shadow-xl shadow-cyan-600/30 border border-cyan-300/40 transition transform active:scale-98 hover:scale-[1.02]"
-            >
-              <div className="flex items-center gap-3.5">
-                <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center text-white">
-                  <Play className="h-5 w-5 fill-current" />
+          <div className="flex-1 min-h-0 flex flex-col justify-between overflow-y-auto pr-1">
+            <div className="space-y-2 sm:space-y-3 max-w-md mx-auto w-full">
+              {/* 1. Spiel starten */}
+              <button
+                onClick={onClose}
+                className="w-full group flex items-center justify-between p-2.5 sm:p-3.5 rounded-xl sm:rounded-2xl bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 shadow-xl shadow-cyan-600/30 border border-cyan-300/40 transition transform active:scale-98 hover:scale-[1.01]"
+              >
+                <div className="flex items-center gap-2.5 sm:gap-3.5 min-w-0">
+                  <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg sm:rounded-xl bg-white/20 flex items-center justify-center text-white shrink-0">
+                    <Play className="h-4 w-4 sm:h-5 sm:w-5 fill-current" />
+                  </div>
+                  <div className="text-left min-w-0">
+                    <div className="text-xs sm:text-sm md:text-base font-bold text-white group-hover:text-amber-200 transition truncate">Spiel starten</div>
+                    <div className="text-[10px] sm:text-xs text-cyan-100/70 truncate">Direkt in die lebendige Welt eintauchen</div>
+                  </div>
                 </div>
-                <div className="text-left">
-                  <div className="text-base font-bold text-white group-hover:text-amber-200 transition">Spiel starten</div>
-                  <div className="text-xs text-cyan-100/70">Direkt in die lebendige Welt eintauchen</div>
-                </div>
-              </div>
-              <ChevronRight className="h-5 w-5 text-cyan-200 group-hover:translate-x-1 transition" />
-            </button>
+                <ChevronRight className="h-4 w-4 sm:h-5 sm:w-5 text-cyan-200 group-hover:translate-x-1 transition shrink-0 ml-2" />
+              </button>
 
-            {/* 2. Welt erstellen */}
-            <button
-              onClick={() => setTab('world_create')}
-              className="w-full group flex items-center justify-between p-4 rounded-2xl bg-slate-800/80 hover:bg-slate-800 border border-slate-700/80 hover:border-cyan-400/50 transition transform active:scale-98 hover:scale-[1.02]"
-            >
-              <div className="flex items-center gap-3.5">
-                <div className="w-10 h-10 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center">
-                  <Globe className="h-5 w-5" />
+              {/* 2. Welt erstellen */}
+              <button
+                onClick={() => setTab('world_create')}
+                className="w-full group flex items-center justify-between p-2.5 sm:p-3.5 rounded-xl sm:rounded-2xl bg-slate-800/80 hover:bg-slate-800 border border-slate-700/80 hover:border-cyan-400/50 transition transform active:scale-98 hover:scale-[1.01]"
+              >
+                <div className="flex items-center gap-2.5 sm:gap-3.5 min-w-0">
+                  <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg sm:rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
+                    <Globe className="h-4 w-4 sm:h-5 sm:w-5" />
+                  </div>
+                  <div className="text-left min-w-0">
+                    <div className="text-xs sm:text-sm md:text-base font-bold text-slate-100 group-hover:text-emerald-300 transition truncate">Welt erstellen & anpassen</div>
+                    <div className="text-[10px] sm:text-xs text-slate-400 truncate">Biome, Seed, Tageszeit & Schwierigkeit wählen</div>
+                  </div>
                 </div>
-                <div className="text-left">
-                  <div className="text-base font-bold text-slate-100 group-hover:text-emerald-300 transition">Welt erstellen & anpassen</div>
-                  <div className="text-xs text-slate-400">Biome, Seed, Tageszeit & Schwierigkeit wählen</div>
-                </div>
-              </div>
-              <ChevronRight className="h-5 w-5 text-slate-400 group-hover:translate-x-1 transition" />
-            </button>
+                <ChevronRight className="h-4 w-4 sm:h-5 sm:w-5 text-slate-400 group-hover:translate-x-1 transition shrink-0 ml-2" />
+              </button>
 
-            {/* 3. Avatar auswählen */}
-            <button
-              onClick={() => setTab('avatar_select')}
-              className="w-full group flex items-center justify-between p-4 rounded-2xl bg-slate-800/80 hover:bg-slate-800 border border-slate-700/80 hover:border-amber-400/50 transition transform active:scale-98 hover:scale-[1.02]"
-            >
-              <div className="flex items-center gap-3.5">
-                <div className="w-10 h-10 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center text-lg">
-                  👤
+              {/* 3. Avatar auswählen */}
+              <button
+                onClick={() => setTab('avatar_select')}
+                className="w-full group flex items-center justify-between p-2.5 sm:p-3.5 rounded-xl sm:rounded-2xl bg-slate-800/80 hover:bg-slate-800 border border-slate-700/80 hover:border-amber-400/50 transition transform active:scale-98 hover:scale-[1.01]"
+              >
+                <div className="flex items-center gap-2.5 sm:gap-3.5 min-w-0">
+                  <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg sm:rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center text-base sm:text-lg shrink-0">
+                    👤
+                  </div>
+                  <div className="text-left min-w-0">
+                    <div className="text-xs sm:text-sm md:text-base font-bold text-slate-100 group-hover:text-amber-300 transition truncate">Charakter auswählen (4 Avatare)</div>
+                    <div className="text-[10px] sm:text-xs text-slate-400 truncate">Link, Zelda, Kitsune-Fuchs oder Drachenkrieger</div>
+                  </div>
                 </div>
-                <div className="text-left">
-                  <div className="text-base font-bold text-slate-100 group-hover:text-amber-300 transition">Charakter auswählen (4 Avatare)</div>
-                  <div className="text-xs text-slate-400">Link, Zelda, Kitsune-Fuchs oder Drachenkrieger</div>
-                </div>
-              </div>
-              <ChevronRight className="h-5 w-5 text-slate-400 group-hover:translate-x-1 transition" />
-            </button>
+                <ChevronRight className="h-4 w-4 sm:h-5 sm:w-5 text-slate-400 group-hover:translate-x-1 transition shrink-0 ml-2" />
+              </button>
 
-            {/* 4. Einstellungen */}
-            <button
-              onClick={() => {
-                onOpenSettings();
-                onClose();
-              }}
-              className="w-full group flex items-center justify-between p-4 rounded-2xl bg-slate-800/80 hover:bg-slate-800 border border-slate-700/80 hover:border-purple-400/50 transition transform active:scale-98 hover:scale-[1.02]"
-            >
-              <div className="flex items-center gap-3.5">
-                <div className="w-10 h-10 rounded-xl bg-purple-500/20 text-purple-400 flex items-center justify-center">
-                  <Settings className="h-5 w-5" />
+              {/* 4. Einstellungen */}
+              <button
+                onClick={() => {
+                  onOpenSettings();
+                  onClose();
+                }}
+                className="w-full group flex items-center justify-between p-2.5 sm:p-3.5 rounded-xl sm:rounded-2xl bg-slate-800/80 hover:bg-slate-800 border border-slate-700/80 hover:border-purple-400/50 transition transform active:scale-98 hover:scale-[1.01]"
+              >
+                <div className="flex items-center gap-2.5 sm:gap-3.5 min-w-0">
+                  <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg sm:rounded-xl bg-purple-500/20 text-purple-400 flex items-center justify-center shrink-0">
+                    <Settings className="h-4 w-4 sm:h-5 sm:w-5" />
+                  </div>
+                  <div className="text-left min-w-0">
+                    <div className="text-xs sm:text-sm md:text-base font-bold text-slate-100 group-hover:text-purple-300 transition truncate">Einstellungen</div>
+                    <div className="text-[10px] sm:text-xs text-slate-400 truncate">Grafik, Audio, Touch-Steuerung & Kamera</div>
+                  </div>
                 </div>
-                <div className="text-left">
-                  <div className="text-base font-bold text-slate-100 group-hover:text-purple-300 transition">Einstellungen</div>
-                  <div className="text-xs text-slate-400">Grafik, Audio, Touch-Steuerung & Kamera</div>
-                </div>
-              </div>
-              <ChevronRight className="h-5 w-5 text-slate-400 group-hover:translate-x-1 transition" />
-            </button>
+                <ChevronRight className="h-4 w-4 sm:h-5 sm:w-5 text-slate-400 group-hover:translate-x-1 transition shrink-0 ml-2" />
+              </button>
+            </div>
 
             {/* Controls summary footer */}
-            <div className="pt-4 border-t border-slate-800 text-center text-xs text-slate-400">
-              <span className="font-semibold text-cyan-300">Tipp:</span> Im Spiel jederzeit mit <kbd className="px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 text-slate-300">ESC</kbd> oder Menü-Knopf erreichbar.
+            <div className="shrink-0 pt-2 sm:pt-3 border-t border-slate-800 text-center text-[10px] sm:text-xs text-slate-400 mt-2">
+              <span className="font-semibold text-cyan-300">Tipp:</span> Im Spiel jederzeit mit <kbd className="px-1 py-0.5 rounded bg-slate-800 border border-slate-700 text-slate-300">ESC</kbd> oder Menü-Knopf erreichbar.
             </div>
           </div>
         )}
@@ -205,172 +207,174 @@ export const StartMenuModal: React.FC<StartMenuModalProps> = ({
         {/* VIEW: WORLD CREATION                                        */}
         {/* ----------------------------------------------------------- */}
         {tab === 'world_create' && (
-          <div className="space-y-5 animate-fade-in">
-            <div className="flex items-center gap-3 mb-2">
-              <button
-                onClick={() => setTab('main')}
-                className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition"
-              >
-                <ArrowLeft className="h-5 w-5" />
-              </button>
-              <div>
-                <h2 className="text-xl font-bold text-slate-100">Neue Welt erschaffen</h2>
-                <p className="text-xs text-slate-400">Passe dein Abenteuer nach deinen Vorstellungen an</p>
-              </div>
-            </div>
-
-            {/* Welten-Name & Seed */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1.5">Welten-Name</label>
-                <input
-                  type="text"
-                  value={worldName}
-                  onChange={(e) => setWorldName(e.target.value)}
-                  className="w-full rounded-xl bg-slate-800 border border-slate-700 px-3.5 py-2 text-sm text-white focus:outline-none focus:border-cyan-400"
-                />
+          <div className="flex-1 min-h-0 flex flex-col justify-between overflow-y-auto pr-1 animate-fade-in">
+            <div className="space-y-3 sm:space-y-4">
+              <div className="flex items-center gap-2.5 sm:gap-3 mb-1 shrink-0">
+                <button
+                  onClick={() => setTab('main')}
+                  className="p-1.5 sm:p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition"
+                >
+                  <ArrowLeft className="h-4 w-4 sm:h-5 sm:w-5" />
+                </button>
+                <div>
+                  <h2 className="text-base sm:text-xl font-bold text-slate-100">Neue Welt erschaffen</h2>
+                  <p className="text-[10px] sm:text-xs text-slate-400">Passe dein Abenteuer nach deinen Vorstellungen an</p>
+                </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1.5">Welten-Seed</label>
-                <div className="flex gap-2">
+              {/* Welten-Name & Seed */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 sm:gap-3.5">
+                <div>
+                  <label className="block text-[11px] sm:text-xs font-semibold text-slate-300 mb-1">Welten-Name</label>
                   <input
                     type="text"
-                    value={worldSeed}
-                    onChange={(e) => setWorldSeed(e.target.value)}
-                    className="flex-1 rounded-xl bg-slate-800 border border-slate-700 px-3.5 py-2 text-sm text-white focus:outline-none focus:border-cyan-400"
+                    value={worldName}
+                    onChange={(e) => setWorldName(e.target.value)}
+                    className="w-full rounded-xl bg-slate-800 border border-slate-700 px-3 py-1.5 sm:py-2 text-xs sm:text-sm text-white focus:outline-none focus:border-cyan-400"
                   />
-                  <button
-                    onClick={handleRandomSeed}
-                    className="p-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-cyan-500/30 transition"
-                    title="Zufälligen Seed generieren"
-                  >
-                    <Dices className="h-4 w-4" />
-                  </button>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] sm:text-xs font-semibold text-slate-300 mb-1">Welten-Seed</label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={worldSeed}
+                      onChange={(e) => setWorldSeed(e.target.value)}
+                      className="flex-1 rounded-xl bg-slate-800 border border-slate-700 px-3 py-1.5 sm:py-2 text-xs sm:text-sm text-white focus:outline-none focus:border-cyan-400"
+                    />
+                    <button
+                      onClick={handleRandomSeed}
+                      className="p-2 sm:p-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-cyan-500/30 transition shrink-0"
+                      title="Zufälligen Seed generieren"
+                    >
+                      <Dices className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Start-Biom */}
+              <div>
+                <label className="block text-[11px] sm:text-xs font-semibold text-slate-300 mb-1.5">Start-Biom wählen</label>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {[
+                    { id: 'hyrule', name: 'Hyrule-Ebene', icon: '🌲', desc: 'Üppige Wälder & Gras' },
+                    { id: 'snow', name: 'Hebra-Schnee', icon: '❄️', desc: 'Frost & Schneespuren' },
+                    { id: 'desert', name: 'Gerudo-Wüste', icon: '🏜️', desc: 'Dünen & Oasen' },
+                    { id: 'volcano', name: 'Eldin-Vulkan', icon: '🌋', desc: 'Basalt & Reiche Erze' },
+                  ].map((b) => (
+                    <button
+                      key={b.id}
+                      onClick={() => setBiome(b.id as any)}
+                      className={`p-2 sm:p-3 rounded-xl sm:rounded-2xl text-left border transition ${
+                        biome === b.id
+                          ? 'bg-cyan-500/20 border-cyan-400 text-white shadow-lg shadow-cyan-500/10'
+                          : 'bg-slate-800/60 border-slate-700/80 text-slate-400 hover:border-slate-600'
+                      }`}
+                    >
+                      <div className="text-lg sm:text-2xl mb-0.5">{b.icon}</div>
+                      <div className="text-xs font-bold text-white leading-tight">{b.name}</div>
+                      <div className="text-[9px] sm:text-[10px] text-slate-400 mt-0.5 leading-tight">{b.desc}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Landschafts-Vorlage & Gelände */}
+              <div>
+                <label className="block text-[11px] sm:text-xs font-semibold text-slate-300 mb-1.5">Landschafts-Vorlage & Gelände</label>
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5 sm:gap-2">
+                  {[
+                    { id: 'procedural', name: 'Standard Hyrule', icon: '⛰️', desc: 'Hügel, Täler & Seen' },
+                    { id: 'flat', name: 'Flaches Land', icon: '🌱', desc: 'Sanfte grüne Wiesen' },
+                    { id: 'circuit_flat', name: 'Rennstrecke', icon: '🏁', desc: '100% flach für Straßen' },
+                    { id: 'islands', name: 'Insel-Archipel', icon: '🏝️', desc: 'Inseln & Ozean' },
+                    { id: 'mountains', name: 'Hochgebirge', icon: '🏔️', desc: 'Alpine Schneegipfel' },
+                  ].map((tpl) => (
+                    <button
+                      key={tpl.id}
+                      onClick={() => setTemplate(tpl.id as any)}
+                      className={`p-2 sm:p-2.5 rounded-xl sm:rounded-2xl text-left border transition ${
+                        template === tpl.id
+                          ? 'bg-emerald-500/20 border-emerald-400 text-white shadow-lg shadow-emerald-500/10'
+                          : 'bg-slate-800/60 border-slate-700/80 text-slate-400 hover:border-slate-600'
+                      }`}
+                    >
+                      <div className="text-base sm:text-xl mb-0.5">{tpl.icon}</div>
+                      <div className="text-[11px] sm:text-xs font-bold text-white leading-tight">{tpl.name}</div>
+                      <div className="text-[9px] sm:text-[10px] text-slate-400 mt-0.5 leading-tight">{tpl.desc}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Start-Tageszeit */}
+              <div>
+                <label className="block text-[11px] sm:text-xs font-semibold text-slate-300 mb-1.5">Start-Tageszeit</label>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {[
+                    { time: 6.0, name: 'Morgengrauen', icon: Sunrise },
+                    { time: 12.0, name: 'Mittagssonne', icon: Sun },
+                    { time: 18.5, name: 'Abenddämmerung', icon: Sunset },
+                    { time: 23.0, name: 'Sternennacht', icon: Moon },
+                  ].map((t) => {
+                    const Icon = t.icon;
+                    return (
+                      <button
+                        key={t.name}
+                        onClick={() => setTimeOfDay(t.time)}
+                        className={`flex items-center gap-1.5 sm:gap-2 p-2 sm:p-2.5 rounded-xl border transition text-[11px] sm:text-xs font-semibold ${
+                          timeOfDay === t.time
+                            ? 'bg-amber-500/20 border-amber-400 text-amber-200'
+                            : 'bg-slate-800/60 border-slate-700/80 text-slate-400 hover:border-slate-600'
+                        }`}
+                      >
+                        <Icon className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                        <span>{t.name}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Schwierigkeit */}
+              <div>
+                <label className="block text-[11px] sm:text-xs font-semibold text-slate-300 mb-1.5">Schwierigkeitsgrad</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { id: 'explorer', name: 'Erkunder', desc: '5 Herzen / Entspannt' },
+                    { id: 'normal', name: 'Klassisch', desc: '3 Herzen / Standard' },
+                    { id: 'master', name: 'Meister-Modus', desc: '2 Herzen / Hart' },
+                  ].map((d) => (
+                    <button
+                      key={d.id}
+                      onClick={() => setDifficulty(d.id as any)}
+                      className={`p-2 sm:p-2.5 rounded-xl border transition text-center ${
+                        difficulty === d.id
+                          ? 'bg-blue-500/20 border-blue-400 text-blue-200'
+                          : 'bg-slate-800/60 border-slate-700/80 text-slate-400 hover:border-slate-600'
+                      }`}
+                    >
+                      <div className="text-[11px] sm:text-xs font-bold text-white">{d.name}</div>
+                      <div className="text-[9px] sm:text-[10px] text-slate-400">{d.desc}</div>
+                    </button>
+                  ))}
                 </div>
               </div>
             </div>
 
-            {/* Start-Biom */}
-            <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-2">Start-Biom wählen</label>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-                {[
-                  { id: 'hyrule', name: 'Hyrule-Ebene', icon: '🌲', desc: 'Üppige Wälder & Gras' },
-                  { id: 'snow', name: 'Hebra-Schnee', icon: '❄️', desc: 'Frost & Schneespuren' },
-                  { id: 'desert', name: 'Gerudo-Wüste', icon: '🏜️', desc: 'Dünen & Oasen' },
-                  { id: 'volcano', name: 'Eldin-Vulkan', icon: '🌋', desc: 'Basalt & Reiche Erze' },
-                ].map((b) => (
-                  <button
-                    key={b.id}
-                    onClick={() => setBiome(b.id as any)}
-                    className={`p-3 rounded-2xl text-left border transition ${
-                      biome === b.id
-                        ? 'bg-cyan-500/20 border-cyan-400 text-white shadow-lg shadow-cyan-500/10'
-                        : 'bg-slate-800/60 border-slate-700/80 text-slate-400 hover:border-slate-600'
-                    }`}
-                  >
-                    <div className="text-2xl mb-1">{b.icon}</div>
-                    <div className="text-xs font-bold text-white">{b.name}</div>
-                    <div className="text-[10px] text-slate-400 mt-0.5">{b.desc}</div>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Landschafts-Vorlage & Gelände */}
-            <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-2">Landschafts-Vorlage & Gelände</label>
-              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-                {[
-                  { id: 'procedural', name: 'Standard Hyrule', icon: '⛰️', desc: 'Hügel, Täler & Seen' },
-                  { id: 'flat', name: 'Flaches Land', icon: '🌱', desc: 'Sanfte grüne Wiesen' },
-                  { id: 'circuit_flat', name: 'Rennstrecke', icon: '🏁', desc: '100% flach für Straßen' },
-                  { id: 'islands', name: 'Insel-Archipel', icon: '🏝️', desc: 'Inseln & Ozean' },
-                  { id: 'mountains', name: 'Hochgebirge', icon: '🏔️', desc: 'Alpine Schneegipfel' },
-                ].map((tpl) => (
-                  <button
-                    key={tpl.id}
-                    onClick={() => setTemplate(tpl.id as any)}
-                    className={`p-2.5 rounded-2xl text-left border transition ${
-                      template === tpl.id
-                        ? 'bg-emerald-500/20 border-emerald-400 text-white shadow-lg shadow-emerald-500/10'
-                        : 'bg-slate-800/60 border-slate-700/80 text-slate-400 hover:border-slate-600'
-                    }`}
-                  >
-                    <div className="text-xl mb-0.5">{tpl.icon}</div>
-                    <div className="text-xs font-bold text-white leading-tight">{tpl.name}</div>
-                    <div className="text-[10px] text-slate-400 mt-0.5 leading-tight">{tpl.desc}</div>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Start-Tageszeit */}
-            <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-2">Start-Tageszeit</label>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-                {[
-                  { time: 6.0, name: 'Morgengrauen', icon: Sunrise },
-                  { time: 12.0, name: 'Mittagssonne', icon: Sun },
-                  { time: 18.5, name: 'Abenddämmerung', icon: Sunset },
-                  { time: 23.0, name: 'Sternennacht', icon: Moon },
-                ].map((t) => {
-                  const Icon = t.icon;
-                  return (
-                    <button
-                      key={t.name}
-                      onClick={() => setTimeOfDay(t.time)}
-                      className={`flex items-center gap-2 p-2.5 rounded-xl border transition text-xs font-semibold ${
-                        timeOfDay === t.time
-                          ? 'bg-amber-500/20 border-amber-400 text-amber-200'
-                          : 'bg-slate-800/60 border-slate-700/80 text-slate-400 hover:border-slate-600'
-                      }`}
-                    >
-                      <Icon className="h-4 w-4" />
-                      <span>{t.name}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Schwierigkeit */}
-            <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-2">Schwierigkeitsgrad</label>
-              <div className="grid grid-cols-3 gap-2.5">
-                {[
-                  { id: 'explorer', name: 'Erkunder', desc: '5 Herzen / Entspannt' },
-                  { id: 'normal', name: 'Klassisch', desc: '3 Herzen / Standard' },
-                  { id: 'master', name: 'Meister-Modus', desc: '2 Herzen / Hart' },
-                ].map((d) => (
-                  <button
-                    key={d.id}
-                    onClick={() => setDifficulty(d.id as any)}
-                    className={`p-2.5 rounded-xl border transition text-center ${
-                      difficulty === d.id
-                        ? 'bg-blue-500/20 border-blue-400 text-blue-200'
-                        : 'bg-slate-800/60 border-slate-700/80 text-slate-400 hover:border-slate-600'
-                    }`}
-                  >
-                    <div className="text-xs font-bold text-white">{d.name}</div>
-                    <div className="text-[10px] text-slate-400">{d.desc}</div>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Action Buttons */}
-            <div className="flex gap-3 pt-3">
+            {/* Sticky Action Footer */}
+            <div className="flex gap-2 sm:gap-3 pt-2.5 sm:pt-3 border-t border-slate-800 shrink-0 mt-3">
               <button
                 onClick={() => setTab('main')}
-                className="flex-1 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-sm transition"
+                className="flex-1 py-2 sm:py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs sm:text-sm transition"
               >
                 Zurück
               </button>
               <button
                 onClick={handleStartCreatedWorld}
-                className="flex-2 py-3 px-6 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-slate-950 font-extrabold text-sm shadow-xl shadow-emerald-500/30 transition transform hover:scale-[1.02] active:scale-98"
+                className="flex-2 py-2 sm:py-2.5 px-4 sm:px-6 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-slate-950 font-extrabold text-xs sm:text-sm shadow-xl shadow-emerald-500/30 transition transform hover:scale-[1.01] active:scale-98"
               >
                 🌍 Welt erschaffen & Starten
               </button>
@@ -382,22 +386,22 @@ export const StartMenuModal: React.FC<StartMenuModalProps> = ({
         {/* VIEW: AVATAR SELECTION                                      */}
         {/* ----------------------------------------------------------- */}
         {tab === 'avatar_select' && (
-          <div className="space-y-4 animate-fade-in">
-            <div className="flex items-center gap-3 mb-2">
+          <div className="flex-1 min-h-0 flex flex-col justify-between overflow-y-auto pr-1 animate-fade-in">
+            <div className="flex items-center gap-2.5 sm:gap-3 mb-2 shrink-0">
               <button
                 onClick={() => setTab('main')}
-                className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition"
+                className="p-1.5 sm:p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition"
               >
-                <ArrowLeft className="h-5 w-5" />
+                <ArrowLeft className="h-4 w-4 sm:h-5 sm:w-5" />
               </button>
               <div>
-                <h2 className="text-xl font-bold text-slate-100">Spielfigur wählen</h2>
-                <p className="text-xs text-slate-400">Wähle deinen Helden – jederzeit im Spiel wechselbar</p>
+                <h2 className="text-base sm:text-xl font-bold text-slate-100">Spielfigur wählen</h2>
+                <p className="text-[10px] sm:text-xs text-slate-400">Wähle deinen Helden – jederzeit im Spiel wechselbar</p>
               </div>
             </div>
 
             {/* 4 Avatar Cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 sm:gap-3.5 my-1">
               {avatarCards.map((card) => {
                 const isSelected = selectedAvatar === card.id;
                 return (
@@ -407,38 +411,38 @@ export const StartMenuModal: React.FC<StartMenuModalProps> = ({
                       setSelectedAvatar(card.id);
                       onSelectAvatar(card.id);
                     }}
-                    className={`cursor-pointer rounded-2xl p-4 border transition-all transform active:scale-98 ${
+                    className={`cursor-pointer rounded-xl sm:rounded-2xl p-3 sm:p-3.5 border transition-all transform active:scale-98 ${
                       isSelected
-                        ? 'bg-slate-800/90 border-cyan-400 ring-2 ring-cyan-400/40 shadow-xl shadow-cyan-500/20 scale-[1.01]'
+                        ? 'bg-slate-800/90 border-cyan-400 ring-2 ring-cyan-400/40 shadow-xl shadow-cyan-500/20'
                         : 'bg-slate-900/60 border-slate-800 hover:border-slate-700 hover:bg-slate-850'
                     }`}
                   >
-                    <div className="flex items-center justify-between mb-2.5">
-                      <div className="flex items-center gap-2.5">
-                        <span className="text-2xl">{card.icon}</span>
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xl sm:text-2xl">{card.icon}</span>
                         <div>
-                          <div className="text-sm font-bold text-white">{card.name}</div>
-                          <div className="text-[11px] text-cyan-300 font-medium">{card.typeBadge}</div>
+                          <div className="text-xs sm:text-sm font-bold text-white">{card.name}</div>
+                          <div className="text-[10px] sm:text-[11px] text-cyan-300 font-medium">{card.typeBadge}</div>
                         </div>
                       </div>
-                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full bg-gradient-to-r ${card.badgeColor} text-slate-950`}>
+                      <span className={`text-[9px] sm:text-[10px] font-bold px-2 py-0.5 rounded-full bg-gradient-to-r ${card.badgeColor} text-slate-950`}>
                         {card.genderBadge}
                       </span>
                     </div>
 
-                    <p className="text-xs text-slate-300 mb-2.5 leading-relaxed">{card.desc}</p>
+                    <p className="text-[11px] sm:text-xs text-slate-300 mb-2 leading-relaxed">{card.desc}</p>
 
-                    <div className="space-y-1">
+                    <div className="space-y-0.5 sm:space-y-1">
                       {card.details.map((detail, idx) => (
-                        <div key={idx} className="flex items-center gap-1.5 text-[11px] text-slate-400">
+                        <div key={idx} className="flex items-center gap-1 text-[10px] sm:text-[11px] text-slate-400">
                           <span className="text-cyan-400">•</span>
                           <span>{detail}</span>
                         </div>
                       ))}
                     </div>
 
-                    <div className="mt-3 pt-2.5 border-t border-slate-800 flex justify-end">
-                      <span className={`text-xs font-bold ${isSelected ? 'text-cyan-300' : 'text-slate-500'}`}>
+                    <div className="mt-2.5 pt-2 border-t border-slate-800 flex justify-end">
+                      <span className={`text-[11px] sm:text-xs font-bold ${isSelected ? 'text-cyan-300' : 'text-slate-500'}`}>
                         {isSelected ? '✓ Ausgewählt' : 'Auswählen'}
                       </span>
                     </div>
@@ -447,10 +451,11 @@ export const StartMenuModal: React.FC<StartMenuModalProps> = ({
               })}
             </div>
 
-            <div className="pt-2 flex justify-end">
+            {/* Sticky Action Footer */}
+            <div className="pt-2 sm:pt-2.5 flex justify-end shrink-0 border-t border-slate-800 mt-2">
               <button
                 onClick={() => setTab('main')}
-                className="px-6 py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs transition"
+                className="px-5 sm:px-6 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs sm:text-sm transition shadow-md"
               >
                 Fertig
               </button>

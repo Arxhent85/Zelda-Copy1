@@ -12,7 +12,7 @@ import { StartMenuModal } from './components/StartMenuModal';
 import { QuickMenuModal } from './components/QuickMenuModal';
 import { LevelEditorUI } from './components/LevelEditorUI';
 import { GameEngine } from './game/GameEngine';
-import { DamageText, GameSettings, PlayerStats, ShrineData, Vector3D, AvatarVariant, WorldCreationOptions } from './types';
+import { DamageText, GameSettings, PlayerStats, ShrineData, Vector3D, AvatarVariant, WorldCreationOptions, InventoryItem } from './types';
 import { RefreshCw, Play, RotateCw, Check, X, Mountain, Compass } from 'lucide-react';
 
 export default function App() {
@@ -21,6 +21,7 @@ export default function App() {
   // React copies of engine state for reactive UI rendering
   const [playerPos, setPlayerPos] = useState<Vector3D>({ x: 0, y: 0, z: 0 });
   const [playerRotation, setPlayerRotation] = useState<number>(0);
+  const [equippedItem, setEquippedItem] = useState<InventoryItem | undefined>(undefined);
   const [stats, setStats] = useState<PlayerStats>({
     health: 12,
     maxHealth: 12,
@@ -94,6 +95,9 @@ export default function App() {
     setEngine(inst);
     setShrines(inst.collectibleManager.shrinesData);
 
+    const initEquipped = inst.inventory.find((i) => i.equipped && (i.type === 'tool' || i.type === 'weapon')) || inst.inventory.find((i) => i.equipped);
+    if (initEquipped) setEquippedItem({ ...initEquipped });
+
     // Sync state update hook from 3D physics loop into React HUD
     inst.onStateUpdate = () => {
       setPlayerPos({ ...inst.physics.position });
@@ -102,6 +106,9 @@ export default function App() {
       setTimeOfDay(inst.skyLighting.timeOfDay);
       setShrines([...inst.collectibleManager.shrinesData]);
       setDamageTexts([...inst.damageTexts]);
+
+      const curEquipped = inst.inventory.find((i) => i.equipped && (i.type === 'tool' || i.type === 'weapon')) || inst.inventory.find((i) => i.equipped);
+      setEquippedItem(curEquipped ? { ...curEquipped } : undefined);
 
       // Calculate 2D screen coordinate for lock-on reticle if active
       if (inst.cameraControls.isLockedOn && inst.cameraControls.targetLockEnemy) {
@@ -288,6 +295,8 @@ export default function App() {
   const handleEquipItem = (id: string) => {
     if (!engine) return;
     const msg = engine.equipItem(id);
+    const curEquipped = engine.inventory.find((i) => i.equipped && (i.type === 'tool' || i.type === 'weapon')) || engine.inventory.find((i) => i.equipped);
+    setEquippedItem(curEquipped ? { ...curEquipped } : undefined);
     showToast(msg);
   };
 
@@ -518,6 +527,17 @@ export default function App() {
           }
         }}
         isBowEquipped={engine ? engine.inventory.some((i) => i.equipped && (i.id.includes('bow') || i.name.toLowerCase().includes('bogen'))) : false}
+        activeEquippedItem={equippedItem}
+        onShieldHold={(holding) => {
+          if (engine) {
+            engine.physics.isBlocking = holding;
+            if (holding) {
+              engine.physics.actionState = 'SHIELD_BLOCK';
+            } else if (engine.physics.actionState === 'SHIELD_BLOCK') {
+              engine.physics.actionState = 'IDLE';
+            }
+          }
+        }}
         onMineHarvest={handleMineHarvest}
         onOpenCrafting={() => setIsCraftingOpen(true)}
         isBuildModeActive={isBuildActive}

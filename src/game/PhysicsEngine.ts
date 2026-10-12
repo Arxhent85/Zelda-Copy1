@@ -14,6 +14,7 @@ export class PhysicsEngine {
   public isGliding = false;
   public isFlying = false;
   public isSwimming = false;
+  public isBlocking = false;
   public isAscending = false;
   public isDescending = false;
 
@@ -333,6 +334,11 @@ export class PhysicsEngine {
       } else if (this.isClimbing) {
         speed = 6.0; // Climb speed
         stats.stamina = Math.max(0, stats.stamina - delta * 22);
+      } else if (this.isBlocking && this.isGrounded) {
+        speed = 7.0; // Cautious guarded walk speed while raising shield
+        if (this.attackCooldown <= 0) {
+          this.actionState = 'SHIELD_BLOCK';
+        }
       } else if (this.isGrounded) {
         speed = moveMagnitude > 0.6 ? 16.0 : 11.0; // Run vs Walk
         if (this.attackCooldown <= 0) {
@@ -367,7 +373,7 @@ export class PhysicsEngine {
       this.velocity.x *= 0.82;
       this.velocity.z *= 0.82;
       if (this.isGrounded && this.attackCooldown <= 0 && this.actionState !== 'DODGE') {
-        this.actionState = isBowAiming ? 'BOW_AIM' : 'IDLE';
+        this.actionState = this.isBlocking ? 'SHIELD_BLOCK' : (isBowAiming ? 'BOW_AIM' : 'IDLE');
       }
     }
 

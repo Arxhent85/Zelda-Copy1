@@ -1,5 +1,6 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { Sword, Wind, Zap, Shield, Target, Hand, Map, Package, Settings as SettingsIcon, Maximize, Minimize, Pickaxe, Hammer, RotateCw, Check, X, Plane, Compass } from 'lucide-react';
+import { InventoryItem } from '../types';
 
 interface TouchControlsProps {
   onMove: (x: number, z: number) => void;
@@ -10,11 +11,13 @@ interface TouchControlsProps {
   onFlyToggle?: () => void;
   onSprintDodge: (sprint: boolean) => void;
   onInteract: () => void;
+  onShieldHold?: (holding: boolean) => void;
   onLockOnToggle: () => void;
   onOpenMap?: () => void;
   onOpenInventory?: () => void;
   onOpenSettings?: () => void;
   onOpenStartMenu?: () => void;
+  activeEquippedItem?: InventoryItem;
   // Mining, Crafting & Building
   onMineHarvest?: () => void;
   onOpenCrafting?: () => void;
@@ -42,11 +45,13 @@ export const VirtualTouchControls: React.FC<TouchControlsProps> = ({
   onFlyToggle,
   onSprintDodge,
   onInteract,
+  onShieldHold,
   onLockOnToggle,
   onOpenMap,
   onOpenInventory,
   onOpenSettings,
   onOpenStartMenu,
+  activeEquippedItem,
   onMineHarvest,
   onOpenCrafting,
   isBuildModeActive = false,
@@ -214,6 +219,85 @@ export const VirtualTouchControls: React.FC<TouchControlsProps> = ({
     };
   }, [onMove, onCameraRotate]);
 
+  // Dynamic Action Button Morphing based on equipped tool/weapon
+  const getActionMeta = () => {
+    if (!activeEquippedItem) {
+      return {
+        type: 'sword',
+        label: 'Schlag',
+        sublabel: 'Faust / Schwert',
+        icon: <Sword className="h-7 w-7 text-white drop-shadow" />,
+        gradient: 'from-emerald-600 via-teal-500 to-green-400',
+        borderColor: 'border-emerald-300',
+      };
+    }
+
+    const nameLower = activeEquippedItem.name.toLowerCase();
+    const idLower = activeEquippedItem.id.toLowerCase();
+    const toolType = activeEquippedItem.toolType;
+
+    // 1. Woodcutter Axe
+    if (toolType === 'axe' || nameLower.includes('axt') || idLower.includes('axe')) {
+      return {
+        type: 'axe',
+        label: 'Fällen',
+        sublabel: activeEquippedItem.name,
+        icon: <span className="text-2xl filter drop-shadow">🪓</span>,
+        gradient: 'from-amber-600 via-orange-500 to-yellow-500',
+        borderColor: 'border-amber-300',
+      };
+    }
+
+    // 2. Miner Pickaxe
+    if (toolType === 'pickaxe' || nameLower.includes('spitzhacke') || idLower.includes('pickaxe')) {
+      return {
+        type: 'pickaxe',
+        label: 'Abbauen',
+        sublabel: activeEquippedItem.name,
+        icon: <Pickaxe className="h-7 w-7 text-amber-100 drop-shadow" />,
+        gradient: 'from-slate-700 via-zinc-600 to-amber-600',
+        borderColor: 'border-amber-300',
+      };
+    }
+
+    // 3. Shovel / Broom
+    if (toolType === 'shovel' || nameLower.includes('schaufel') || nameLower.includes('besen') || idLower.includes('shovel')) {
+      const isBroom = nameLower.includes('besen');
+      return {
+        type: 'shovel',
+        label: isBroom ? 'Fegen' : 'Graben',
+        sublabel: activeEquippedItem.name,
+        icon: <span className="text-2xl filter drop-shadow">{isBroom ? '🧹' : '🪚'}</span>,
+        gradient: 'from-yellow-700 via-amber-700 to-stone-600',
+        borderColor: 'border-yellow-400',
+      };
+    }
+
+    // 4. Bow & Arrow
+    if (activeEquippedItem.type === 'bow' || nameLower.includes('bogen') || idLower.includes('bow')) {
+      return {
+        type: 'bow',
+        label: 'Schuss',
+        sublabel: activeEquippedItem.name,
+        icon: <span className="text-2xl filter drop-shadow">🏹</span>,
+        gradient: 'from-indigo-600 via-cyan-500 to-sky-400',
+        borderColor: 'border-cyan-300',
+      };
+    }
+
+    // 5. Default Weapon / Sword
+    return {
+      type: 'weapon',
+      label: 'Angriff',
+      sublabel: activeEquippedItem.name,
+      icon: <Sword className="h-7 w-7 text-white drop-shadow" />,
+      gradient: 'from-emerald-600 via-teal-500 to-green-400',
+      borderColor: 'border-emerald-300',
+    };
+  };
+
+  const actionMeta = getActionMeta();
+
   return (
     <div className="pointer-events-none absolute inset-0 select-none touch-none overflow-hidden z-10">
       {/* Left Touch Screen Region for Dynamic Joystick - Only rendered on active touch devices during gameplay */}
@@ -281,36 +365,47 @@ export const VirtualTouchControls: React.FC<TouchControlsProps> = ({
           </div>
         )}
 
-        {/* Top Row: Mine/Harvest, Lock-On & Interact */}
+        {/* Top Row: Lock-On Target (if bow) & 🛡️ Royal Shield Guard / Interact */}
         <div className="flex items-center gap-3">
-          {onMineHarvest && (
-            <button
-              onTouchStart={(e) => e.stopPropagation()}
-              onClick={onMineHarvest}
-              className="flex h-12 w-12 items-center justify-center rounded-full bg-orange-600/90 text-white shadow-xl backdrop-blur-md active:scale-90 border border-orange-400/50"
-              title="Abbauen / Fällen / Graben"
-            >
-              <Pickaxe className="h-6 w-6" />
-            </button>
-          )}
-
           {isBowEquipped && (
             <button
               onTouchStart={(e) => e.stopPropagation()}
               onClick={onLockOnToggle}
-              className="flex h-12 w-12 items-center justify-center rounded-full bg-blue-600/90 text-white shadow-xl backdrop-blur-md active:scale-90"
+              className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-600/90 text-white shadow-xl backdrop-blur-md active:scale-90 border border-blue-400/50"
               title="Ziel erfassen / Bogen zielen"
             >
               <Target className="h-6 w-6" />
             </button>
           )}
+
+          {/* 🛡️ Royal Shield Guard & Interact (Replaces separate hand & tool buttons) */}
           <button
-            onTouchStart={(e) => e.stopPropagation()}
+            onTouchStart={(e) => {
+              e.stopPropagation();
+              onShieldHold?.(true);
+              onInteract();
+            }}
+            onTouchEnd={(e) => {
+              e.stopPropagation();
+              onShieldHold?.(false);
+            }}
+            onTouchCancel={(e) => {
+              e.stopPropagation();
+              onShieldHold?.(false);
+            }}
+            onMouseDown={() => {
+              onShieldHold?.(true);
+              onInteract();
+            }}
+            onMouseUp={() => {
+              onShieldHold?.(false);
+            }}
             onClick={onInteract}
-            className="flex h-12 w-12 items-center justify-center rounded-full bg-amber-500/90 text-white shadow-xl backdrop-blur-md active:scale-90"
-            title="Interact (E)"
+            className="flex h-12 w-12 sm:h-13 sm:w-13 flex-col items-center justify-center rounded-2xl bg-gradient-to-tr from-blue-700 via-indigo-600 to-sky-500 text-white shadow-xl backdrop-blur-md active:scale-90 border-2 border-amber-300/80 transition-all select-none"
+            title="Schild Guard (Halten zum Blocken) / Interagieren (Tippen) (E)"
           >
-            <Hand className="h-6 w-6" />
+            <Shield className="h-5 w-5 text-amber-300 fill-amber-400/20 drop-shadow" />
+            <span className="text-[8px] font-black uppercase text-amber-200 tracking-wider leading-none mt-0.5">SCHILD</span>
           </button>
         </div>
 
@@ -521,16 +616,22 @@ export const VirtualTouchControls: React.FC<TouchControlsProps> = ({
                 <Zap className="h-6 w-6" />
               </button>
 
+              {/* Dynamic Morphed Action Button (Axt, Spitzhacke, Schaufel, Besen, Bogen oder Schwert) */}
               <button
                 onTouchStart={(e) => {
                   e.stopPropagation();
                   onAttack();
                 }}
                 onClick={onAttack}
-                className="flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-tr from-emerald-600 to-green-400 text-white shadow-2xl backdrop-blur-md active:scale-90"
-                title="Attack (F)"
+                className={`relative flex h-16 w-16 sm:h-18 sm:w-18 flex-col items-center justify-center rounded-3xl bg-gradient-to-tr ${actionMeta.gradient} text-white shadow-2xl backdrop-blur-md active:scale-90 border-2 ${actionMeta.borderColor} transition-all duration-200 select-none`}
+                title={`${actionMeta.label} - ${actionMeta.sublabel} (F / Mausklick)`}
               >
-                <Sword className="h-9 w-9" />
+                <div className="flex items-center justify-center leading-none">
+                  {actionMeta.icon}
+                </div>
+                <span className="text-[9px] font-black uppercase tracking-wider drop-shadow mt-1 leading-none">
+                  {actionMeta.label}
+                </span>
               </button>
             </div>
           </>

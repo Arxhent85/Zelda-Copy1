@@ -634,6 +634,20 @@ export class GameEngine {
     this.enemyManager.updateAI(delta, this.physics.position, (damage) => {
       // Player received damage from enemy contact
       if (this.physics.invulnerableTimer > 0) return;
+      if (this.physics.actionState === 'SHIELD_BLOCK') {
+        this.physics.invulnerableTimer = 0.6;
+        audioEngine.playHitImpact();
+        this.addDamageText('🛡️ GEBLOCKT!', new THREE.Vector3(this.physics.position.x, this.physics.position.y + 1.8, this.physics.position.z), '#38bdf8', true);
+        if (nearestEnemy) {
+          const kx = nearestEnemy.state.position.x - this.physics.position.x;
+          const kz = nearestEnemy.state.position.z - this.physics.position.z;
+          const dist = Math.hypot(kx, kz) || 1;
+          nearestEnemy.state.position.x += (kx / dist) * 1.5;
+          nearestEnemy.state.position.z += (kz / dist) * 1.5;
+        }
+        if (this.onStateUpdate) this.onStateUpdate();
+        return;
+      }
       this.physics.invulnerableTimer = 1.0; // 1 second invulnerability
       this.stats.health = Math.max(0, this.stats.health - Math.round(damage / 2));
       const heartLoss = Math.max(0.5, Number((damage / 20).toFixed(1)));

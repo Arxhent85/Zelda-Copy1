@@ -13,6 +13,7 @@ export type PlayerActionState =
   | 'ATTACK_LIGHT'
   | 'ATTACK_HEAVY'
   | 'BOW_AIM'
+  | 'SHIELD_BLOCK'
   | 'SWIMMING'
   | 'RIDE'
   | 'HIT_KNOCKBACK'

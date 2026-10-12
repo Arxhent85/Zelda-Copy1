@@ -2261,6 +2261,29 @@ export class AvatarHero {
         break;
       }
 
+      case 'SHIELD_BLOCK': {
+        // Hero raises Hylian shield squarely in front of body/face to block incoming attacks
+        this.shield.visible = true;
+        this.torso.position.y = 1.30;
+        this.torso.rotation.set(0.06, -0.25, 0); // slight defensive brace angle
+        this.head.rotation.set(-0.06, 0.25, 0);
+
+        // Left arm raises shield forward and bent ~90 degrees
+        this.leftUpperArm.rotation.set(-0.95, 0.45, -0.35);
+        this.leftLowerArm.rotation.set(-1.35, 0.1, 0.25);
+
+        // Right arm holds weapon ready at hip/side
+        this.rightUpperArm.rotation.set(-0.35, -0.25, 0.35);
+        this.rightLowerArm.rotation.set(-0.85, 0, 0);
+
+        // Grounded defensive stance
+        this.leftUpperLeg.rotation.set(0.35, 0, -0.25);
+        this.leftLowerLeg.rotation.set(0.45, 0, 0);
+        this.rightUpperLeg.rotation.set(-0.2, 0, 0.2);
+        this.rightLowerLeg.rotation.set(0.35, 0, 0);
+        break;
+      }
+
       case 'HIT_KNOCKBACK': {
         const p = Math.min(at / 0.4, 1);
         const flinch = Math.sin(p * Math.PI);
