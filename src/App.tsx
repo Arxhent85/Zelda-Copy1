@@ -511,6 +511,21 @@ export default function App() {
             if (msg) showToast(msg);
           }
         }}
+        onGas={(active) => {
+          if (engine) engine.touchDriving.gas = active;
+        }}
+        onBrake={(active) => {
+          if (engine) engine.touchDriving.brake = active;
+        }}
+        onSteer={(dir) => {
+          if (engine) engine.touchDriving.steer = dir;
+        }}
+        onDrift={(active) => {
+          if (engine) engine.touchDriving.drift = active;
+        }}
+        onTurbo={(active) => {
+          if (engine) engine.touchDriving.turbo = active;
+        }}
         onLockOnToggle={() => {
           if (engine) {
             engine.cameraControls.isLockedOn = !engine.cameraControls.isLockedOn;

@@ -624,10 +624,22 @@ export class LevelEditorManager {
         ctx.fillStyle = Math.random() > 0.5 ? '#64748b' : '#374151';
         ctx.fillRect(Math.random() * 512, Math.random() * 512, 2, 2);
       }
-      // Bright white edge boundary lines
+      // Red and White Alternating Racing Curbs along outer track edges (FIA & Mario Kart Kerbs)
+      const curbWidth = 32;
+      const curbStep = 48;
+      for (let y = 0; y < 512; y += curbStep) {
+        const isRed = (Math.floor(y / curbStep) % 2) === 0;
+        ctx.fillStyle = isRed ? '#dc2626' : '#ffffff';
+        // Left outer curb
+        ctx.fillRect(0, y, curbWidth, curbStep);
+        // Right outer curb
+        ctx.fillRect(512 - curbWidth, y, curbWidth, curbStep);
+      }
+      // Inner asphalt boundary white line
       ctx.fillStyle = '#ffffff';
-      ctx.fillRect(20, 0, 18, 512);
-      ctx.fillRect(512 - 38, 0, 18, 512);
+      ctx.fillRect(curbWidth + 2, 0, 10, 512);
+      ctx.fillRect(512 - curbWidth - 12, 0, 10, 512);
+
       // Golden yellow dashed centerline
       ctx.strokeStyle = '#fde047';
       ctx.lineWidth = 14;

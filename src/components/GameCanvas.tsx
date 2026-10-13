@@ -79,6 +79,41 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ settings, onEngineReady,
       if (keys.current['KeyA'] || keys.current['ArrowLeft']) kx -= 1;
       if (keys.current['KeyD'] || keys.current['ArrowRight']) kx += 1;
 
+      const isDriving = engineRef.current ? engineRef.current.vehicleSystem.activeVehicleIndex >= 0 : false;
+      if (isDriving && engineRef.current) {
+        const td = engineRef.current.touchDriving;
+
+        // Steering: Dedicated tablet steering buttons OR left joystick OR keyboard
+        let steer = kx;
+        if (Math.abs(td.steer) > 0.05) {
+          steer = td.steer;
+        } else if (Math.abs(moveInputRef.current.x) > 0.05) {
+          steer = moveInputRef.current.x;
+        }
+
+        // Gas & Brake: Dedicated tablet pedals OR left joystick Y OR keyboard W/S
+        let gas = kz;
+        if (td.gas) {
+          gas = 1.0;
+        } else if (td.brake) {
+          gas = -1.0;
+        } else if (Math.abs(moveInputRef.current.z) > 0.05) {
+          gas = moveInputRef.current.z;
+        }
+
+        const isSprint = !!keys.current['ShiftLeft'] || !!keys.current['ShiftRight'] || td.turbo;
+        const isJump = !!keys.current['Space'] || !!engineRef.current?.touchJump || td.drift;
+
+        return {
+          moveX: steer,
+          moveZ: gas,
+          isSprint,
+          isJump,
+          isAttack: false,
+          isDodge: false,
+        };
+      }
+
       const touchX = moveInputRef.current.x;
       const touchZ = moveInputRef.current.z;
 

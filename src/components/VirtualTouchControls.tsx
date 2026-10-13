@@ -34,6 +34,9 @@ interface TouchControlsProps {
   onExitVehicle?: () => void;
   onGas?: (active: boolean) => void;
   onBrake?: (active: boolean) => void;
+  onSteer?: (direction: number) => void;
+  onDrift?: (active: boolean) => void;
+  onTurbo?: (active: boolean) => void;
 }
 
 export const VirtualTouchControls: React.FC<TouchControlsProps> = ({
@@ -67,6 +70,9 @@ export const VirtualTouchControls: React.FC<TouchControlsProps> = ({
   onExitVehicle,
   onGas,
   onBrake,
+  onSteer,
+  onDrift,
+  onTurbo,
 }) => {
   // Joystick State
   const joystickTouchId = useRef<number | null>(null);
@@ -314,25 +320,85 @@ export const VirtualTouchControls: React.FC<TouchControlsProps> = ({
         </>
       )}
 
-      {/* Visual Dynamic Joystick Ring & Knob */}
-      {!isEditorActive && (joystickCenter ? (
-        <div
-          className="pointer-events-none absolute z-20 flex h-28 w-28 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-2 border-emerald-400/60 bg-slate-900/50 backdrop-blur-md shadow-2xl animate-fade-in"
-          style={{ left: joystickCenter.x, top: joystickCenter.y }}
-        >
-          <div
-            className="h-12 w-12 rounded-full bg-gradient-to-tr from-emerald-500 to-teal-300 shadow-lg"
-            style={{
-              transform: `translate(${knobOffset.x}px, ${knobOffset.y}px)`,
-            }}
-          />
-        </div>
-      ) : (
-        /* Default Hint Joystick Ring in bottom left if untouched */
-        <div className="pointer-events-none absolute bottom-10 left-10 z-20 flex h-28 w-28 items-center justify-center rounded-full border border-white/20 bg-slate-900/30 backdrop-blur-sm opacity-60">
-          <div className="h-10 w-10 rounded-full bg-emerald-500/50" />
-        </div>
-      ))}
+      {/* Left Bottom Control: Dynamic Joystick OR Dedicated Steer Buttons when driving */}
+      {!isEditorActive && (
+        isDriving ? (
+          <div className="pointer-events-auto absolute bottom-8 left-6 z-30 flex items-center gap-3 touch-none select-none">
+            {/* Left Steer Button */}
+            <button
+              onTouchStart={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onSteer?.(-1);
+              }}
+              onTouchEnd={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onSteer?.(0);
+              }}
+              onTouchCancel={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onSteer?.(0);
+              }}
+              onMouseDown={() => onSteer?.(-1)}
+              onMouseUp={() => onSteer?.(0)}
+              onMouseLeave={() => onSteer?.(0)}
+              className="flex h-16 w-16 sm:h-20 sm:w-20 flex-col items-center justify-center rounded-2xl bg-gradient-to-tr from-slate-900 to-slate-800 text-white shadow-2xl backdrop-blur-md active:scale-90 border-2 border-cyan-400/80 font-black active:border-cyan-300"
+              title="Nach links lenken (A)"
+            >
+              <span className="text-2xl sm:text-3xl text-cyan-300">◀</span>
+              <span className="text-[10px] font-black uppercase tracking-wider text-cyan-200">LINKS</span>
+            </button>
+
+            {/* Right Steer Button */}
+            <button
+              onTouchStart={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onSteer?.(1);
+              }}
+              onTouchEnd={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onSteer?.(0);
+              }}
+              onTouchCancel={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onSteer?.(0);
+              }}
+              onMouseDown={() => onSteer?.(1)}
+              onMouseUp={() => onSteer?.(0)}
+              onMouseLeave={() => onSteer?.(0)}
+              className="flex h-16 w-16 sm:h-20 sm:w-20 flex-col items-center justify-center rounded-2xl bg-gradient-to-tr from-slate-900 to-slate-800 text-white shadow-2xl backdrop-blur-md active:scale-90 border-2 border-cyan-400/80 font-black active:border-cyan-300"
+              title="Nach rechts lenken (D)"
+            >
+              <span className="text-2xl sm:text-3xl text-cyan-300">▶</span>
+              <span className="text-[10px] font-black uppercase tracking-wider text-cyan-200">RECHTS</span>
+            </button>
+          </div>
+        ) : (
+          joystickCenter ? (
+            <div
+              className="pointer-events-none absolute z-20 flex h-28 w-28 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-2 border-emerald-400/60 bg-slate-900/50 backdrop-blur-md shadow-2xl animate-fade-in"
+              style={{ left: joystickCenter.x, top: joystickCenter.y }}
+            >
+              <div
+                className="h-12 w-12 rounded-full bg-gradient-to-tr from-emerald-500 to-teal-300 shadow-lg"
+                style={{
+                  transform: `translate(${knobOffset.x}px, ${knobOffset.y}px)`,
+                }}
+              />
+            </div>
+          ) : (
+            /* Default Hint Joystick Ring in bottom left if untouched */
+            <div className="pointer-events-none absolute bottom-10 left-10 z-20 flex h-28 w-28 items-center justify-center rounded-full border border-white/20 bg-slate-900/30 backdrop-blur-sm opacity-60">
+              <div className="h-10 w-10 rounded-full bg-emerald-500/50" />
+            </div>
+          )
+        )
+      )}
 
       {/* Action Buttons Cluster (Right Bottom) - Only in play mode */}
       {!isEditorActive && (
@@ -409,25 +475,42 @@ export const VirtualTouchControls: React.FC<TouchControlsProps> = ({
           </button>
         </div>
 
-        {/* 🏎️ MARIO KART / VEHICLE DRIVING TOUCH CONTROLS */}
+        {/* 🏎️ MARIO KART / VEHICLE DRIVING TOUCH CONTROLS (Tablets & Smartphones) */}
         {isDriving ? (
-          <div className="flex flex-col items-end gap-2.5 animate-fade-in">
+          <div className="flex flex-col items-end gap-3 animate-fade-in select-none">
             {/* Top Row: Turbo Boost & Exit Car */}
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2.5">
+              {/* 🚀 Instant Nitro Turbo Launch Button */}
               <button
                 onTouchStart={(e) => {
+                  e.preventDefault();
                   e.stopPropagation();
-                  onSprintDodge(true);
+                  onTurbo?.(true);
                 }}
-                className="flex items-center gap-1.5 rounded-full bg-gradient-to-r from-cyan-500 to-blue-600 px-4 py-2 text-xs font-black text-white shadow-xl backdrop-blur-md active:scale-90 border border-cyan-300"
-                title="Nitro Turbo Boost (Shift)"
+                onTouchEnd={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onTurbo?.(false);
+                }}
+                onTouchCancel={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onTurbo?.(false);
+                }}
+                onMouseDown={() => onTurbo?.(true)}
+                onMouseUp={() => onTurbo?.(false)}
+                onMouseLeave={() => onTurbo?.(false)}
+                className="flex items-center gap-2 rounded-2xl bg-gradient-to-r from-cyan-500 via-blue-600 to-indigo-600 px-4 py-2.5 text-xs sm:text-sm font-black text-white shadow-2xl backdrop-blur-md active:scale-90 border-2 border-cyan-300 animate-pulse"
+                title="Nitro Turbo Boost (Shift / Tap)"
               >
-                <Zap className="h-4 w-4" />
-                <span>TURBO</span>
+                <Zap className="h-4 w-4 fill-cyan-200" />
+                <span className="tracking-wider">TURBO</span>
               </button>
 
+              {/* 🚪 Exit Vehicle Button */}
               <button
                 onTouchStart={(e) => {
+                  e.preventDefault();
                   e.stopPropagation();
                   if (onExitVehicle) onExitVehicle();
                   else onInteract();
@@ -436,7 +519,7 @@ export const VirtualTouchControls: React.FC<TouchControlsProps> = ({
                   if (onExitVehicle) onExitVehicle();
                   else onInteract();
                 }}
-                className="flex items-center gap-1.5 rounded-full bg-rose-600/90 px-4 py-2 text-xs font-black text-white shadow-xl backdrop-blur-md active:scale-90 border border-rose-300"
+                className="flex items-center gap-1.5 rounded-2xl bg-rose-600/95 px-3.5 py-2.5 text-xs sm:text-sm font-bold text-white shadow-xl backdrop-blur-md active:scale-90 border border-rose-300"
                 title="Aussteigen (E)"
               >
                 <span>🚪</span>
@@ -445,84 +528,86 @@ export const VirtualTouchControls: React.FC<TouchControlsProps> = ({
             </div>
 
             {/* Bottom Row: Brake/Reverse, Drift Power-Slide, Gas Forward */}
-            <div className="flex items-end gap-2.5">
-              {/* Brake / Reverse */}
+            <div className="flex items-end gap-3">
+              {/* 🛑 Brake / Reverse Pedal */}
               <button
                 onTouchStart={(e) => {
+                  e.preventDefault();
                   e.stopPropagation();
                   onBrake?.(true);
-                  onMove(0, -1);
                 }}
                 onTouchEnd={(e) => {
+                  e.preventDefault();
                   e.stopPropagation();
                   onBrake?.(false);
-                  onMove(0, 0);
                 }}
-                onMouseDown={() => {
-                  onBrake?.(true);
-                  onMove(0, -1);
-                }}
-                onMouseUp={() => {
+                onTouchCancel={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
                   onBrake?.(false);
-                  onMove(0, 0);
                 }}
-                className="flex h-14 w-14 flex-col items-center justify-center rounded-2xl bg-red-600/90 text-white shadow-xl backdrop-blur-md active:scale-90 border border-red-400 font-bold"
-                title="Bremse / Rückwärts (S)"
+                onMouseDown={() => onBrake?.(true)}
+                onMouseUp={() => onBrake?.(false)}
+                onMouseLeave={() => onBrake?.(false)}
+                className="flex h-16 w-16 sm:h-20 sm:w-20 flex-col items-center justify-center rounded-2xl bg-gradient-to-tr from-red-700 to-rose-600 text-white shadow-2xl backdrop-blur-md active:scale-90 border-2 border-red-300 font-black"
+                title="Bremse / Rückwärts (S - Halten)"
               >
-                <span className="text-base">🛑</span>
-                <span className="text-[9px] font-black tracking-wider">BREMSE</span>
+                <span className="text-xl sm:text-2xl">🛑</span>
+                <span className="text-[9px] sm:text-[10px] font-black tracking-wider">BREMSE</span>
               </button>
 
-              {/* Power-Slide Drift (Hold to charge sparks, release for mini-turbo!) */}
+              {/* ⭐ Power-Slide Drift (Hold to charge sparks, release for mini-turbo boost!) */}
               <button
                 onTouchStart={(e) => {
+                  e.preventDefault();
                   e.stopPropagation();
-                  onJumpHold?.(true);
-                  onJumpGlide();
+                  onDrift?.(true);
                 }}
                 onTouchEnd={(e) => {
+                  e.preventDefault();
                   e.stopPropagation();
-                  onJumpHold?.(false);
+                  onDrift?.(false);
                 }}
-                onMouseDown={() => {
-                  onJumpHold?.(true);
-                  onJumpGlide();
+                onTouchCancel={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onDrift?.(false);
                 }}
-                onMouseUp={() => {
-                  onJumpHold?.(false);
-                }}
-                className="flex h-16 w-16 flex-col items-center justify-center rounded-2xl bg-gradient-to-tr from-amber-500 to-yellow-400 text-slate-950 shadow-2xl backdrop-blur-md active:scale-90 border border-yellow-200 font-black animate-pulse"
+                onMouseDown={() => onDrift?.(true)}
+                onMouseUp={() => onDrift?.(false)}
+                onMouseLeave={() => onDrift?.(false)}
+                className="flex h-18 w-18 sm:h-22 sm:w-22 flex-col items-center justify-center rounded-3xl bg-gradient-to-tr from-amber-500 via-yellow-400 to-amber-300 text-slate-950 shadow-2xl backdrop-blur-md active:scale-90 border-2 border-yellow-100 font-black"
                 title="Power-Slide Drift (Space - Halten zum Driften, Loslassen für Mini-Turbo!)"
               >
-                <span className="text-xl">⭐</span>
-                <span className="text-[10px] font-black uppercase">DRIFT</span>
+                <span className="text-2xl sm:text-3xl">⭐</span>
+                <span className="text-[10px] sm:text-xs font-black uppercase tracking-wider">DRIFT</span>
               </button>
 
-              {/* Gas Forward */}
+              {/* 🏎️ Gas Forward Pedal */}
               <button
                 onTouchStart={(e) => {
+                  e.preventDefault();
                   e.stopPropagation();
                   onGas?.(true);
-                  onMove(0, 1);
                 }}
                 onTouchEnd={(e) => {
+                  e.preventDefault();
                   e.stopPropagation();
                   onGas?.(false);
-                  onMove(0, 0);
                 }}
-                onMouseDown={() => {
-                  onGas?.(true);
-                  onMove(0, 1);
-                }}
-                onMouseUp={() => {
+                onTouchCancel={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
                   onGas?.(false);
-                  onMove(0, 0);
                 }}
-                className="flex h-18 w-18 flex-col items-center justify-center rounded-3xl bg-gradient-to-tr from-emerald-600 to-green-400 text-white shadow-2xl backdrop-blur-md active:scale-90 border-2 border-green-200 font-black"
-                title="Gas geben (W)"
+                onMouseDown={() => onGas?.(true)}
+                onMouseUp={() => onGas?.(false)}
+                onMouseLeave={() => onGas?.(false)}
+                className="flex h-20 w-20 sm:h-24 sm:w-24 flex-col items-center justify-center rounded-3xl bg-gradient-to-tr from-emerald-600 via-green-500 to-emerald-400 text-white shadow-2xl backdrop-blur-md active:scale-90 border-2 border-green-200 font-black"
+                title="Gas geben (W - Halten)"
               >
-                <span className="text-2xl">🏎️</span>
-                <span className="text-xs font-black tracking-wider">GAS</span>
+                <span className="text-2xl sm:text-3xl">▲</span>
+                <span className="text-xs sm:text-sm font-black tracking-wider">GAS</span>
               </button>
             </div>
           </div>

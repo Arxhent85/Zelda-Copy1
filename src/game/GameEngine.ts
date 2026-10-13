@@ -24,7 +24,22 @@ import { MountSystem } from './MountSystem';
 import { WildlifeManager } from './WildlifeManager';
 import { VehicleSystem } from './VehicleSystem';
 
+export interface TouchDrivingState {
+  gas: boolean;
+  brake: boolean;
+  steer: number; // -1 (left) to +1 (right)
+  drift: boolean;
+  turbo: boolean;
+}
+
 export class GameEngine {
+  public touchDriving: TouchDrivingState = {
+    gas: false,
+    brake: false,
+    steer: 0,
+    drift: false,
+    turbo: false,
+  };
   public renderer: THREE.WebGLRenderer;
   public composer: EffectComposer | null = null;
   public scene: THREE.Scene;
@@ -475,15 +490,18 @@ export class GameEngine {
 
               const activeVeh = this.vehicleSystem.vehicles[this.vehicleSystem.activeVehicleIndex];
               if (activeVeh) {
-                // Place avatar hero into the cockpit driver's seat
-                this.physics.position.set(
-                  activeVeh.data.position.x,
-                  activeVeh.data.position.y + 0.32,
-                  activeVeh.data.position.z
-                );
+                // Place avatar hero realistically into the bucket seat behind the steering wheel
+                const yaw = activeVeh.data.rotation;
+                const seatLocalZ = -0.32;
+                const seatLocalY = 0.42;
+                const worldX = activeVeh.data.position.x + Math.sin(yaw) * seatLocalZ;
+                const worldZ = activeVeh.data.position.z + Math.cos(yaw) * seatLocalZ;
+                const worldY = activeVeh.data.position.y + seatLocalY;
+
+                this.physics.position.set(worldX, worldY, worldZ);
                 this.physics.rotation = activeVeh.data.rotation;
                 this.physics.velocity.set(0, 0, 0);
-                this.physics.actionState = 'RIDE';
+                this.physics.actionState = 'DRIVE';
 
                 // GTA-style Chase Camera
                 this.cameraControls.isDrivingMode = true;
@@ -1299,7 +1317,7 @@ export class GameEngine {
     if (nearVehicle) {
       const enterRes = this.vehicleSystem.enterVehicle(nearVehicle.index);
       if (enterRes.success) {
-        this.physics.actionState = 'RIDE';
+        this.physics.actionState = 'DRIVE';
         this.physics.velocity.set(0, 0, 0);
         this.cameraControls.isDrivingMode = true;
         if (this.onToastMessage) this.onToastMessage(enterRes.message);

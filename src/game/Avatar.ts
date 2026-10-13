@@ -1669,20 +1669,26 @@ export class AvatarHero {
       collar.position.set(0, 0.44, 0);
       this.torsoVisuals.add(collar);
 
-      // Champion's Tunic White Insignia (Clean layered depth - ZERO Z-FIGHTING)
-      const chestStripe = new THREE.Mesh(new THREE.BoxGeometry(0.10, 0.50, 0.02), this.tunicTrimMat);
-      chestStripe.position.set(0, 0.09, 0.188);
+      // Champion's Tunic White Insignia (Seamless non-overlapping geometry - zero Z-fighting or flickering)
+      // 1. Vertical central stripe (width: 0.10, height: 0.50)
+      const chestStripe = new THREE.Mesh(new THREE.BoxGeometry(0.10, 0.50, 0.016), this.tunicTrimMat);
+      chestStripe.position.set(0, 0.09, 0.192);
       this.torsoVisuals.add(chestStripe);
 
-      const chestCross = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.07, 0.02), this.tunicTrimMat);
-      chestCross.position.set(0, 0.18, 0.188);
-      this.torsoVisuals.add(chestCross);
+      // 2. Left and Right horizontal cross arms (touch the vertical stripe at x = ±0.05 without penetrating)
+      const leftCrossArm = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.07, 0.016), this.tunicTrimMat);
+      leftCrossArm.position.set(-0.11, 0.18, 0.192);
+      this.torsoVisuals.add(leftCrossArm);
 
-      // Golden Champion Diamond Emblem at center of cross
-      const crestGeo = new THREE.ConeGeometry(0.032, 0.048, 4);
+      const rightCrossArm = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.07, 0.016), this.tunicTrimMat);
+      rightCrossArm.position.set(0.11, 0.18, 0.192);
+      this.torsoVisuals.add(rightCrossArm);
+
+      // 3. Golden Champion Diamond Emblem positioned cleanly in front
+      const crestGeo = new THREE.ConeGeometry(0.034, 0.048, 4);
       const crestMesh = new THREE.Mesh(crestGeo, this.goldMat);
       crestMesh.rotation.set(Math.PI / 2, 0, Math.PI / 4);
-      crestMesh.position.set(0, 0.18, 0.198);
+      crestMesh.position.set(0, 0.18, 0.204);
       this.torsoVisuals.add(crestMesh);
 
       // Leather Waist Belt with Golden Buckle
@@ -1761,7 +1767,7 @@ export class AvatarHero {
 
     this.paraglider.visible = false;
     this.bow.visible = action === 'BOW_AIM';
-    const weaponsEquipped = action !== 'BOW_AIM' && action !== 'GLIDE' && action !== 'CLIMB';
+    const weaponsEquipped = action !== 'BOW_AIM' && action !== 'GLIDE' && action !== 'CLIMB' && action !== 'DRIVE';
     this.sword.visible = weaponsEquipped;
     this.shield.visible = weaponsEquipped;
 
@@ -2016,6 +2022,49 @@ export class AvatarHero {
 
         this.head.rotation.set(-0.15, 0, 0);
         this.hairPonytail.rotation.set(0.6 + gallopBob, 0, 0);
+        break;
+      }
+
+      case 'DRIVE': {
+        // Authentic Seated Racing Cockpit Kinematics (Mario Kart / GTA Racing Stance)
+        // Torso sits firmly into driver bucket seat, reacts to engine vibration & centrifugal curve banking
+        const engineVibe = Math.sin(t * 26.0) * 0.012;
+        const turnLean = THREE.MathUtils.clamp(-this.turnRate * 0.15, -0.42, 0.42);
+
+        this.torso.position.y = 0.94 + engineVibe;
+        this.torso.rotation.set(-0.06, 0, turnLean); // slight recline back into seat
+
+        // Steering Wheel Hands: Athletic 10-and-2 steering grip
+        // When steering, outer arm pushes up, inner arm pulls down dynamically
+        const steerHandOffset = THREE.MathUtils.clamp(this.turnRate * 0.28, -0.65, 0.65);
+
+        this.leftUpperArm.rotation.set(-1.08 + steerHandOffset * 0.35, 0.34, -0.22);
+        this.leftLowerArm.rotation.set(-0.62 - steerHandOffset * 0.22, 0.18, 0.04);
+
+        this.rightUpperArm.rotation.set(-1.08 - steerHandOffset * 0.35, -0.34, 0.22);
+        this.rightLowerArm.rotation.set(-0.62 + steerHandOffset * 0.22, -0.18, -0.04);
+
+        // Driver Pedals & Forward Legs (FORWARD-FACING LEGS):
+        // Upper legs (thighs) extend horizontally forward into footwell (-1.46 rad = ~84 degrees forward)
+        // Lower legs (shins) bend downward toward accelerator & brake pedals (+0.75 rad)
+        // Natural slight thigh spread to fit cockpit
+        this.leftUpperLeg.rotation.set(-1.46, -0.12, -0.14);
+        this.leftLowerLeg.rotation.set(0.72, 0, 0);
+
+        this.rightUpperLeg.rotation.set(-1.46, 0.12, 0.14);
+        this.rightLowerLeg.rotation.set(0.75, 0, 0);
+
+        // Head looks forward along the road and gazes ahead into curve apex
+        this.head.rotation.set(0.04, this.turnRate * 0.20, -turnLean * 0.45);
+
+        // Ponytail streams in open-cockpit slipstream
+        this.hairPonytail.rotation.set(0.58 + Math.sin(t * 16.0) * 0.12, turnLean * 0.25, 0);
+
+        // Ensure all handheld weapons & gliders remain hidden in cockpit
+        this.sword.visible = false;
+        this.shield.visible = false;
+        this.bow.visible = false;
+        this.paraglider.visible = false;
         break;
       }
 

@@ -16,6 +16,7 @@ export type PlayerActionState =
   | 'SHIELD_BLOCK'
   | 'SWIMMING'
   | 'RIDE'
+  | 'DRIVE'
   | 'HIT_KNOCKBACK'
   | 'DEAD';
 

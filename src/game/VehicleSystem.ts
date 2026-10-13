@@ -14,6 +14,8 @@ interface WheelMeshes {
   steeringWheel?: THREE.Mesh;
   chassisMesh: THREE.Group;
   exhaustPipes: THREE.Vector3[];
+  brakeLights?: THREE.Mesh[];
+  brakeMat?: THREE.MeshStandardMaterial;
 }
 
 export class VehicleSystem {
@@ -113,6 +115,7 @@ export class VehicleSystem {
     const vehicleGroup = new THREE.Group();
     vehicleGroup.position.set(x, y, z);
     vehicleGroup.rotation.y = rotation;
+    vehicleGroup.scale.set(1.46, 1.46, 1.46); // Scaled naturally to fit avatar hero cleanly inside the cockpit!
 
     let parts: WheelMeshes;
     let maxSpeed = 28.0;
@@ -220,13 +223,13 @@ export class VehicleSystem {
     podR.position.x = 0.68;
     chassisGroup.add(podR);
 
-    // Driver bucket seat
-    const seatBase = new THREE.Mesh(new THREE.BoxGeometry(0.65, 0.18, 0.55), blackMat);
-    seatBase.position.set(0, 0.38, -0.15);
+    // Driver bucket seat (Wide ergonomically contoured sports seat)
+    const seatBase = new THREE.Mesh(new THREE.BoxGeometry(0.74, 0.18, 0.58), blackMat);
+    seatBase.position.set(0, 0.38, -0.16);
     chassisGroup.add(seatBase);
-    const seatBack = new THREE.Mesh(new THREE.BoxGeometry(0.65, 0.6, 0.15), blackMat);
-    seatBack.position.set(0, 0.68, -0.42);
-    seatBack.rotation.x = -0.12;
+    const seatBack = new THREE.Mesh(new THREE.BoxGeometry(0.74, 0.65, 0.16), blackMat);
+    seatBack.position.set(0, 0.70, -0.44);
+    seatBack.rotation.x = -0.14;
     chassisGroup.add(seatBack);
 
     // Steering column and wheel
@@ -258,6 +261,20 @@ export class VehicleSystem {
     wing.position.set(0, 0.94, -1.15);
     wing.castShadow = true;
     chassisGroup.add(wing);
+
+    // Glowing LED Tail / Brake Lights
+    const brakeMat = new THREE.MeshStandardMaterial({
+      color: 0xef4444,
+      emissive: 0xdc2626,
+      emissiveIntensity: 0.9,
+      roughness: 0.2,
+    });
+    const brakeLightL = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.08, 0.06), brakeMat);
+    brakeLightL.position.set(-0.48, 0.42, -1.26);
+    chassisGroup.add(brakeLightL);
+    const brakeLightR = brakeLightL.clone();
+    brakeLightR.position.x = 0.48;
+    chassisGroup.add(brakeLightR);
 
     // Chrome twin exhaust pipes
     const pipeL = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.35, 10), chromeMat);
@@ -319,9 +336,11 @@ export class VehicleSystem {
       rrWheel,
       steeringWheel: steerWheel,
       chassisMesh: chassisGroup,
+      brakeLights: [brakeLightL, brakeLightR],
+      brakeMat,
       exhaustPipes: [
-        new THREE.Vector3(-0.2, 0.38, -1.3),
-        new THREE.Vector3(0.2, 0.38, -1.3),
+        new THREE.Vector3(-0.2 * 1.46, 0.38 * 1.46, -1.3 * 1.46),
+        new THREE.Vector3(0.2 * 1.46, 0.38 * 1.46, -1.3 * 1.46),
       ],
     };
   }
@@ -433,6 +452,20 @@ export class VehicleSystem {
     rrWheel.scale.set(1.2, 1.2, 1.3);
     root.add(rrWheel);
 
+    // Glowing LED Tail / Brake Lights
+    const brakeMat = new THREE.MeshStandardMaterial({
+      color: 0xef4444,
+      emissive: 0xdc2626,
+      emissiveIntensity: 0.9,
+      roughness: 0.2,
+    });
+    const brakeLightL = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.06, 0.06), brakeMat);
+    brakeLightL.position.set(-0.54, 0.42, -1.32);
+    chassisGroup.add(brakeLightL);
+    const brakeLightR = brakeLightL.clone();
+    brakeLightR.position.x = 0.54;
+    chassisGroup.add(brakeLightR);
+
     return {
       flHub,
       frHub,
@@ -442,10 +475,12 @@ export class VehicleSystem {
       rrWheel,
       steeringWheel: steerWheel,
       chassisMesh: chassisGroup,
+      brakeLights: [brakeLightL, brakeLightR],
+      brakeMat,
       exhaustPipes: [
-        new THREE.Vector3(-0.22, 0.38, -1.35),
-        new THREE.Vector3(0, 0.38, -1.35),
-        new THREE.Vector3(0.22, 0.38, -1.35),
+        new THREE.Vector3(-0.22 * 1.46, 0.38 * 1.46, -1.35 * 1.46),
+        new THREE.Vector3(0, 0.38 * 1.46, -1.35 * 1.46),
+        new THREE.Vector3(0.22 * 1.46, 0.38 * 1.46, -1.35 * 1.46),
       ],
     };
   }
@@ -547,8 +582,8 @@ export class VehicleSystem {
       steeringWheel: steerWheel,
       chassisMesh: chassisGroup,
       exhaustPipes: [
-        new THREE.Vector3(-0.35, 0.95, -1.15),
-        new THREE.Vector3(0.35, 0.95, -1.15),
+        new THREE.Vector3(-0.35 * 1.46, 0.95 * 1.46, -1.15 * 1.46),
+        new THREE.Vector3(0.35 * 1.46, 0.95 * 1.46, -1.15 * 1.46),
       ],
     };
   }
@@ -629,8 +664,8 @@ export class VehicleSystem {
       rrWheel: dummyWheel,
       chassisMesh: chassisGroup,
       exhaustPipes: [
-        new THREE.Vector3(-0.16, 0.55, -1.25),
-        new THREE.Vector3(0.16, 0.55, -1.25),
+        new THREE.Vector3(-0.16 * 1.46, 0.55 * 1.46, -1.25 * 1.46),
+        new THREE.Vector3(0.16 * 1.46, 0.55 * 1.46, -1.25 * 1.46),
       ],
     };
   }
@@ -684,8 +719,8 @@ export class VehicleSystem {
     v.data.driftStage = 0;
 
     // Spawn player safely to the left of the car
-    const exitX = v.data.position.x - Math.cos(v.data.rotation) * 1.6;
-    const exitZ = v.data.position.z + Math.sin(v.data.rotation) * 1.6;
+    const exitX = v.data.position.x - Math.cos(v.data.rotation) * 2.2;
+    const exitZ = v.data.position.z + Math.sin(v.data.rotation) * 2.2;
     const exitY = TerrainManager.getTerrainHeight(exitX, exitZ) + 0.2;
     const exitPos = new THREE.Vector3(exitX, exitY, exitZ);
 
@@ -769,10 +804,18 @@ export class VehicleSystem {
       data.speed = THREE.MathUtils.lerp(data.speed, 0, dt * naturalFriction);
     }
 
-    // Manual Nitro Boost (Shift)
-    if (manualBoostKey && data.speed > 8.0 && data.turboTimer <= 0) {
-      data.turboTimer = 1.2;
-      audioEngine.playMiniTurboBoost(1);
+    // Dynamic brake lights illumination
+    const isBraking = gasInput < -0.05;
+    if (parts.brakeMat) {
+      parts.brakeMat.emissiveIntensity = isBraking ? 3.8 : 0.8;
+      parts.brakeMat.color.setHex(isBraking ? 0xff0000 : 0xef4444);
+    }
+
+    // Manual Nitro Boost (Shift on PC, Turbo Button on Tablet)
+    if (manualBoostKey && data.turboTimer <= 0) {
+      data.turboTimer = 2.0;
+      data.speed = Math.max(data.speed + 14.0, 22.0);
+      audioEngine.playMiniTurboBoost(2);
     }
 
     // Turbo Timer countdown
@@ -784,8 +827,8 @@ export class VehicleSystem {
       }
     }
 
-    // 2. Mario Kart Power-Slide Drift System
-    const canDrift = Math.abs(data.speed) > 6.5;
+    // 2. Mario Kart Power-Slide Drift System (Can drift once rolling > 3.5 m/s)
+    const canDrift = Math.abs(data.speed) > 3.5;
 
     if (driftKey && canDrift && Math.abs(steerInput) > 0.15) {
       if (!data.isDrifting) {
@@ -859,8 +902,8 @@ export class VehicleSystem {
     const nextX = data.position.x + forwardX * dt;
     const nextZ = data.position.z + forwardZ * dt;
 
-    // Solid Wall & Obstacle Collision Check (Radius = 1.15m)
-    const vehicleRadius = 1.15;
+    // Solid Wall & Obstacle Collision Check (Radius = 1.35m matching 1.46x scaled vehicle body)
+    const vehicleRadius = 1.35;
     let finalX = nextX;
     let finalZ = nextZ;
 
