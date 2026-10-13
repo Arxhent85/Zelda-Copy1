@@ -323,6 +323,7 @@ export class GameEngine {
     this.mountSystem = new MountSystem(this.scene);
     this.wildlifeManager = new WildlifeManager(this.scene);
     this.vehicleSystem = new VehicleSystem(this.scene, this.buildingSystem);
+    this.vehicleSystem.getObstacles = () => this.getAllObstacles();
 
     this.initWorld();
     this.terrainDeformation = new TerrainDeformationManager(this.terrainManager);
@@ -419,6 +420,17 @@ export class GameEngine {
       ...this.miningSystem.obstacles,
       ...this.buildingSystem.obstacles,
       ...this.mountSystem.obstacles,
+    ];
+  }
+
+  public getAllObstacles(): ObstacleCollider[] {
+    return [
+      ...this.foliageManager.obstacles,
+      ...this.collectibleManager.getObstacles(),
+      ...this.miningSystem.obstacles,
+      ...this.buildingSystem.obstacles,
+      ...this.mountSystem.obstacles,
+      ...this.physics.dynamicObstacles,
     ];
   }
 

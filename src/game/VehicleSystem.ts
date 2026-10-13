@@ -27,6 +27,7 @@ export class VehicleSystem {
   }[] = [];
 
   public activeVehicleIndex: number = -1;
+  public getObstacles?: () => ObstacleCollider[];
 
   // Particle systems
   private sparkGeo: THREE.BufferGeometry;
@@ -902,43 +903,108 @@ export class VehicleSystem {
     const nextX = data.position.x + forwardX * dt;
     const nextZ = data.position.z + forwardZ * dt;
 
-    // Solid Wall & Obstacle Collision Check (Radius = 1.35m matching 1.46x scaled vehicle body)
-    const vehicleRadius = 1.35;
+    // Solid Wall & World Obstacle Collision Check (Rocks, Boulders, Trees, Ruins, Shrines, Walls, Enemies, Vehicles)
+    const vehicleRadius =
+      data.type === 'hover_cycle' ? 1.05 : data.type === 'buggy_offroad' ? 1.48 : 1.35;
     let finalX = nextX;
     let finalZ = nextZ;
 
-    const allObstacles = this.buildingSystem.obstacles;
-    for (let k = 0; k < allObstacles.length; k++) {
-      const obs = allObstacles[k];
-      const dx = finalX - obs.x;
-      const dz = finalZ - obs.z;
-      const dist = Math.hypot(dx, dz);
-      const minDist = obs.radius + vehicleRadius;
+    // Collect all world obstacles (rocks, trees, ruins, shrines, chests, mining nodes, walls)
+    const baseObstacles = this.getObstacles ? this.getObstacles() : this.buildingSystem.obstacles;
+    const allColliders: ObstacleCollider[] = [...baseObstacles];
 
-      if (dist < minDist && dist > 0.001) {
-        // HIT SOLID WALL / BARRIER!
-        const pen = minDist - dist;
-        const nx = dx / dist;
-        const nz = dz / dist;
+    // Also include other vehicles in the world so you cannot drive through parked cars
+    for (let j = 0; j < this.vehicles.length; j++) {
+      if (j === this.activeVehicleIndex) continue;
+      const otherV = this.vehicles[j].data;
+      allColliders.push({
+        id: otherV.id,
+        type: 'mount',
+        x: otherV.position.x,
+        z: otherV.position.z,
+        yBase: otherV.position.y,
+        height: 1.5,
+        radius: 1.35,
+      });
+    }
 
-        // Push back outside the wall boundary
-        finalX += nx * pen;
-        finalZ += nz * pen;
+    // 2-pass iterative collision solver for rock clusters, corners, and dense tree lines
+    for (let iter = 0; iter < 2; iter++) {
+      for (let k = 0; k < allColliders.length; k++) {
+        const obs = allColliders[k];
 
-        // Wall deflection: cancel velocity component pointing into the wall
-        const dot = forwardX * nx + forwardZ * nz;
-        if (dot < 0) {
-          // Slide along wall tangent!
-          data.speed *= 0.82; // Wall friction slowdown
+        // 1. Fast bounding-box pre-filter (skip distant objects)
+        const dx = finalX - obs.x;
+        const dz = finalZ - obs.z;
+        if (Math.abs(dx) > 10.0 || Math.abs(dz) > 10.0) continue;
+
+        // 2. Vertical height overlap check (generous slope tolerance so vehicles don't slip under boulders on inclines)
+        const obsTop = obs.yBase + (obs.height !== undefined ? obs.height : 3.5);
+        const vehBottom = data.position.y;
+        const vehTop = data.position.y + 1.5;
+        if (vehBottom >= obsTop - 0.25 || vehTop <= obs.yBase - 0.6) {
+          continue; // Car is cleanly on a bridge/flyover above or on ground far below a cliff obstacle
         }
 
-        // Trigger impact sparks & sound if colliding at speed
-        if (Math.abs(data.speed) > 7.0) {
-          this.spawnImpactSparks(finalX, data.position.y + 0.4, finalZ);
-          const now = performance.now();
-          if (now - this.lastScrapeSoundTime > 300) {
-            this.lastScrapeSoundTime = now;
-            audioEngine.playVehicleImpact();
+        // 3. Circle vs circle horizontal distance check
+        const dist = Math.hypot(dx, dz);
+        const obsRadius = obs.radius !== undefined ? obs.radius : 1.0;
+        const minDist = obsRadius + vehicleRadius;
+
+        if (dist < minDist && dist > 0.001) {
+          // SOLID COLLISION WITH WORLD OBJECT!
+          const pen = minDist - dist;
+          const nx = dx / dist; // Vector pointing from obstacle OUTWARDS to car
+          const nz = dz / dist;
+
+          // Push vehicle position completely outside the obstacle volume
+          finalX += nx * pen;
+          finalZ += nz * pen;
+
+          // Direction of travel
+          const moveDir = data.speed >= 0 ? 1 : -1;
+          const fwdX = Math.sin(data.rotation) * moveDir;
+          const fwdZ = Math.cos(data.rotation) * moveDir;
+          const dot = fwdX * nx + fwdZ * nz; // Dot product into obstacle outward normal
+
+          if (dot < -0.45) {
+            // --- HEAD-ON CRASH / HEAVY IMPACT (Mario Kart crash bounce) ---
+            // Elastic recoil bounce away from object
+            data.speed = -data.speed * 0.35;
+            if (Math.abs(data.speed) < 2.5) data.speed = 0;
+
+            // Violent crash cancels active mini-turbo & drift
+            data.turboTimer = 0;
+            data.isDrifting = false;
+            data.driftStage = 0;
+
+            // Trigger crash impact particles & heavy crunch audio
+            this.spawnImpactSparks(finalX, data.position.y + 0.45, finalZ);
+            const now = performance.now();
+            if (now - this.lastScrapeSoundTime > 250) {
+              this.lastScrapeSoundTime = now;
+              audioEngine.playVehicleImpact();
+            }
+          } else if (dot < 0) {
+            // --- GLANCING / GRAZING COLLISION (Scraping side of rock/wall) ---
+            // Friction slowdown
+            data.speed *= 0.88;
+
+            // Tangential deflection: steer gently away from the obstacle
+            const tanX = -nz;
+            const tanZ = nx;
+            const tanDot = fwdX * tanX + fwdZ * tanZ;
+            data.rotation += (tanDot > 0 ? 0.025 : -0.025);
+
+            // Scrape sparks when grinding at speed
+            if (Math.abs(data.speed) > 4.5) {
+              this.spawnImpactSparks(finalX, data.position.y + 0.35, finalZ);
+              const now = performance.now();
+              if (now - this.lastScrapeSoundTime > 350) {
+                this.lastScrapeSoundTime = now;
+                audioEngine.playVehicleImpact();
+              }
+            }
           }
         }
       }
