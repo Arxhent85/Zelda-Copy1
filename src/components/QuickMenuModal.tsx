@@ -11,7 +11,8 @@ import {
   Minimize, 
   Compass, 
   Sparkles, 
-  ShieldCheck 
+  ShieldCheck,
+  Rocket
 } from 'lucide-react';
 
 interface QuickMenuModalProps {
@@ -23,6 +24,8 @@ interface QuickMenuModalProps {
   onOpenStartMenu: () => void;
   onOpenEditor: () => void;
   onOpenSettings: () => void;
+  onSwitchToStarFox?: () => void;
+  onOpenLauncher?: () => void;
 }
 
 export const QuickMenuModal: React.FC<QuickMenuModalProps> = ({
@@ -34,6 +37,8 @@ export const QuickMenuModal: React.FC<QuickMenuModalProps> = ({
   onOpenStartMenu,
   onOpenEditor,
   onOpenSettings,
+  onSwitchToStarFox,
+  onOpenLauncher,
 }) => {
   const [isFullscreen, setIsFullscreen] = useState(false);
 
@@ -180,6 +185,55 @@ export const QuickMenuModal: React.FC<QuickMenuModalProps> = ({
               </button>
             </div>
           </div>
+
+          {/* LEVEL-PORTAL & BONUS GAME */}
+          {(onSwitchToStarFox || onOpenLauncher) && (
+            <div>
+              <div className="text-[9px] sm:text-[10px] font-extrabold uppercase tracking-widest text-cyan-400 mb-1.5 sm:mb-2 flex items-center gap-1.5">
+                <Rocket className="h-3 w-3 sm:h-3.5 sm:w-3.5" /> Bonus-Level & Spielauswahl
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 sm:gap-2">
+                {onSwitchToStarFox && (
+                  <button
+                    onClick={() => {
+                      onClose();
+                      onSwitchToStarFox();
+                    }}
+                    className="flex items-center gap-2 sm:gap-3 p-2 sm:p-2.5 rounded-xl sm:rounded-2xl bg-gradient-to-r from-cyan-900/60 to-blue-900/60 hover:from-cyan-800/80 hover:to-blue-800/80 border border-cyan-400/50 text-white text-xs font-bold active:scale-95 transition shadow-lg group text-left"
+                  >
+                    <div className="flex h-8 w-8 sm:h-10 sm:w-10 shrink-0 items-center justify-center rounded-lg sm:rounded-xl bg-cyan-500/20 text-cyan-300 group-hover:scale-105 transition animate-pulse">
+                      <Rocket className="h-4 w-4 sm:h-5 sm:w-5" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="font-extrabold text-[11px] sm:text-xs text-cyan-200 truncate flex items-center gap-1">
+                        <span>Star Fox 3D Level</span>
+                        <span className="text-[8px] bg-cyan-400 text-slate-950 font-black px-1 rounded">NEU</span>
+                      </div>
+                      <div className="text-[9px] sm:text-[10px] text-cyan-100/70 font-normal truncate">New Corneria Bay Rail-Shooter</div>
+                    </div>
+                  </button>
+                )}
+
+                {onOpenLauncher && (
+                  <button
+                    onClick={() => {
+                      onClose();
+                      onOpenLauncher();
+                    }}
+                    className="flex items-center gap-2 sm:gap-3 p-2 sm:p-2.5 rounded-xl sm:rounded-2xl bg-slate-900/90 hover:bg-slate-800/90 border border-amber-500/40 text-amber-200 text-xs font-bold active:scale-95 transition shadow-md group text-left"
+                  >
+                    <div className="flex h-8 w-8 sm:h-10 sm:w-10 shrink-0 items-center justify-center rounded-lg sm:rounded-xl bg-amber-500/15 text-amber-300">
+                      <Compass className="h-4 w-4 sm:h-5 sm:w-5" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="font-extrabold text-[11px] sm:text-xs text-amber-300 truncate">Spielauswahl</div>
+                      <div className="text-[9px] sm:text-[10px] text-slate-400 font-normal truncate">Zwischen Spielen wechseln</div>
+                    </div>
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* 3. Unterpunkt: SYSTEM & ANSICHT */}
           <div>

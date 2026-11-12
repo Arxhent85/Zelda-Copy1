@@ -12,10 +12,16 @@ import { StartMenuModal } from './components/StartMenuModal';
 import { QuickMenuModal } from './components/QuickMenuModal';
 import { LevelEditorUI } from './components/LevelEditorUI';
 import { GameEngine } from './game/GameEngine';
+import { audioEngine } from './game/AudioEngine';
+import { StarFoxGame } from './components/StarFoxGame';
+import { GameLauncherModal } from './components/GameLauncherModal';
 import { DamageText, GameSettings, PlayerStats, ShrineData, Vector3D, AvatarVariant, WorldCreationOptions, InventoryItem } from './types';
-import { RefreshCw, Play, RotateCw, Check, X, Mountain, Compass } from 'lucide-react';
+import { RefreshCw, Play, RotateCw, Check, X, Mountain, Compass, Rocket } from 'lucide-react';
 
 export default function App() {
+  // Game Selector state: 'launcher' | 'zelda' | 'starfox'
+  const [currentGame, setCurrentGame] = useState<'launcher' | 'zelda' | 'starfox'>('launcher');
+
   const [engine, setEngine] = useState<GameEngine | null>(null);
 
   // React copies of engine state for reactive UI rendering
@@ -333,8 +339,23 @@ export default function App() {
         .map((c) => ({ position: c.data.position, opened: c.data.opened }))
     : [];
 
+  if (currentGame === 'starfox') {
+    return <StarFoxGame onBackToMenu={() => setCurrentGame('launcher')} />;
+  }
+
   return (
     <div className="relative h-screen w-screen overflow-hidden bg-slate-950 font-sans select-none">
+      {/* Game Launcher Portal Modal */}
+      <GameLauncherModal
+        isOpen={currentGame === 'launcher'}
+        onSelectGame={(selected) => {
+          setCurrentGame(selected);
+          if (selected === 'zelda') {
+            setIsStartMenuOpen(false);
+          }
+        }}
+      />
+
       {/* 3D WebGL Canvas Layer */}
       <GameCanvas settings={settings} onEngineReady={handleEngineReady} moveInput={touchMoveDir} />
 
@@ -571,6 +592,14 @@ export default function App() {
         onOpenStartMenu={() => setIsStartMenuOpen(true)}
         onOpenEditor={handleToggleEditor}
         onOpenSettings={() => setIsSettingsOpen(true)}
+        onSwitchToStarFox={() => {
+          setIsQuickMenuOpen(false);
+          setCurrentGame('starfox');
+        }}
+        onOpenLauncher={() => {
+          setIsQuickMenuOpen(false);
+          setCurrentGame('launcher');
+        }}
       />
 
       <StartMenuModal
@@ -583,6 +612,14 @@ export default function App() {
         currentVariant={avatarVariant}
         onSelectAvatar={handleSelectAvatar}
         onCreateWorld={handleCreateWorld}
+        onSwitchToStarFox={() => {
+          setIsStartMenuOpen(false);
+          setCurrentGame('starfox');
+        }}
+        onOpenLauncher={() => {
+          setIsStartMenuOpen(false);
+          setCurrentGame('launcher');
+        }}
       />
 
       <FullMapModal

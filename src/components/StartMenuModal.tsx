@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Play, Settings, Globe, User, Shield, Sparkles, ChevronRight, ArrowLeft, Dices, Sun, Moon, Sunrise, Sunset, Flame, Snowflake, Trees, Compass } from 'lucide-react';
+import { Play, Settings, Globe, User, Shield, Sparkles, ChevronRight, ArrowLeft, Dices, Sun, Moon, Sunrise, Sunset, Flame, Snowflake, Trees, Compass, Rocket } from 'lucide-react';
 import { AvatarVariant, WorldCreationOptions } from '../types';
 
 interface StartMenuModalProps {
@@ -9,6 +9,8 @@ interface StartMenuModalProps {
   currentVariant: AvatarVariant;
   onSelectAvatar: (variant: AvatarVariant) => void;
   onCreateWorld: (options: WorldCreationOptions) => void;
+  onSwitchToStarFox?: () => void;
+  onOpenLauncher?: () => void;
 }
 
 export const StartMenuModal: React.FC<StartMenuModalProps> = ({
@@ -18,6 +20,8 @@ export const StartMenuModal: React.FC<StartMenuModalProps> = ({
   currentVariant,
   onSelectAvatar,
   onCreateWorld,
+  onSwitchToStarFox,
+  onOpenLauncher,
 }) => {
   const [tab, setTab] = useState<'main' | 'world_create' | 'avatar_select'>('main');
 
@@ -127,19 +131,44 @@ export const StartMenuModal: React.FC<StartMenuModalProps> = ({
               {/* 1. Spiel starten */}
               <button
                 onClick={onClose}
-                className="w-full group flex items-center justify-between p-2.5 sm:p-3.5 rounded-xl sm:rounded-2xl bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 shadow-xl shadow-cyan-600/30 border border-cyan-300/40 transition transform active:scale-98 hover:scale-[1.01]"
+                className="w-full group flex items-center justify-between p-2.5 sm:p-3.5 rounded-xl sm:rounded-2xl bg-gradient-to-r from-amber-600 to-yellow-600 hover:from-amber-500 hover:to-yellow-500 shadow-xl shadow-amber-600/30 border border-amber-300/40 transition transform active:scale-98 hover:scale-[1.01]"
               >
                 <div className="flex items-center gap-2.5 sm:gap-3.5 min-w-0">
                   <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg sm:rounded-xl bg-white/20 flex items-center justify-center text-white shrink-0">
                     <Play className="h-4 w-4 sm:h-5 sm:w-5 fill-current" />
                   </div>
                   <div className="text-left min-w-0">
-                    <div className="text-xs sm:text-sm md:text-base font-bold text-white group-hover:text-amber-200 transition truncate">Spiel starten</div>
-                    <div className="text-[10px] sm:text-xs text-cyan-100/70 truncate">Direkt in die lebendige Welt eintauchen</div>
+                    <div className="text-xs sm:text-sm md:text-base font-bold text-white group-hover:text-amber-200 transition truncate">Zelda: Hyrule starten</div>
+                    <div className="text-[10px] sm:text-xs text-amber-100/70 truncate">Direkt in die lebendige Welt eintauchen</div>
                   </div>
                 </div>
-                <ChevronRight className="h-4 w-4 sm:h-5 sm:w-5 text-cyan-200 group-hover:translate-x-1 transition shrink-0 ml-2" />
+                <ChevronRight className="h-4 w-4 sm:h-5 sm:w-5 text-amber-200 group-hover:translate-x-1 transition shrink-0 ml-2" />
               </button>
+
+              {/* STAR FOX LEVEL SWITCH BUTTON */}
+              {onSwitchToStarFox && (
+                <button
+                  onClick={() => {
+                    onClose();
+                    onSwitchToStarFox();
+                  }}
+                  className="w-full group flex items-center justify-between p-2.5 sm:p-3.5 rounded-xl sm:rounded-2xl bg-gradient-to-r from-cyan-600 via-blue-600 to-indigo-600 hover:from-cyan-500 hover:to-indigo-500 shadow-xl shadow-cyan-600/30 border border-cyan-300/50 transition transform active:scale-98 hover:scale-[1.01]"
+                >
+                  <div className="flex items-center gap-2.5 sm:gap-3.5 min-w-0">
+                    <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg sm:rounded-xl bg-white/20 flex items-center justify-center text-white shrink-0 animate-pulse">
+                      <Rocket className="h-4 w-4 sm:h-5 sm:w-5" />
+                    </div>
+                    <div className="text-left min-w-0">
+                      <div className="text-xs sm:text-sm md:text-base font-bold text-white group-hover:text-cyan-200 transition truncate flex items-center gap-1.5">
+                        <span>Star Fox: New Corneria Bay</span>
+                        <span className="text-[9px] bg-cyan-400 text-slate-950 font-black px-1.5 py-0.5 rounded-full uppercase">3D Level</span>
+                      </div>
+                      <div className="text-[10px] sm:text-xs text-cyan-100/80 truncate">Arwing Rail-Shooter mit High-End Effekten</div>
+                    </div>
+                  </div>
+                  <ChevronRight className="h-4 w-4 sm:h-5 sm:w-5 text-cyan-200 group-hover:translate-x-1 transition shrink-0 ml-2" />
+                </button>
+              )}
 
               {/* 2. Welt erstellen */}
               <button
