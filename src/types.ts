@@ -175,6 +175,8 @@ export interface VehicleData {
   name: string;
   position: Vector3D;
   rotation: number;
+  pitch?: number;
+  roll?: number;
   velocity: Vector3D;
   speed: number;
   maxSpeed: number;

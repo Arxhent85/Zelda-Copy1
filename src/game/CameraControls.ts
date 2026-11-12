@@ -16,6 +16,7 @@ export class CameraControls {
   // 🏎️ GTA & Mario Kart Vehicle Chase Camera State
   public isDrivingMode = false;
   public drivingVehicleYaw = 0;
+  public drivingVehiclePitch = 0;
   public drivingSpeed = 0;
   public drivingIsTurbo = false;
 
@@ -114,7 +115,11 @@ export class CameraControls {
       // Camera distance widens with high speed
       const targetDist = 6.6 + Math.min(1.0, Math.abs(this.drivingSpeed) / 30.0) * 3.2;
       this.distance = THREE.MathUtils.lerp(this.distance, targetDist, delta * 4.0);
-      this.pitch = THREE.MathUtils.lerp(this.pitch, 0.22, delta * 3.5);
+
+      // Adapt camera pitch dynamically to uphill / downhill slope!
+      // When climbing a hill, pitch eases up slightly to look ahead; when going downhill, camera looks into the valley
+      const targetPitch = THREE.MathUtils.clamp(0.22 - this.drivingVehiclePitch * 0.45, 0.08, 0.75);
+      this.pitch = THREE.MathUtils.lerp(this.pitch, targetPitch, delta * 4.0);
 
       // Turbo FOV rush
       const targetFov = this.drivingIsTurbo ? 74 : (65 + Math.min(1.0, Math.abs(this.drivingSpeed) / 35.0) * 4);

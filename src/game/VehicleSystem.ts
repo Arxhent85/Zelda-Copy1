@@ -167,7 +167,9 @@ export class VehicleSystem {
     };
 
     const index = this.vehicles.length;
-    this.vehicles.push({ data, mesh: vehicleGroup, parts });
+    const vEntry = { data, mesh: vehicleGroup, parts };
+    this.vehicles.push(vEntry);
+    this.updateVehicleTerrainOrientation(vEntry, 1.0, true);
     return { id, index };
   }
 
@@ -750,11 +752,9 @@ export class VehicleSystem {
       if (isPlayerDriving && input) {
         this.updateDriverPhysics(v, input, dt, cameraYaw);
       } else {
-        // Idle vehicle physics: ground adhesion and slight rolling friction
+        // Idle vehicle physics: ground adhesion, slope orientation and slight rolling friction
         data.speed = THREE.MathUtils.lerp(data.speed, 0, dt * 4.0);
-        const groundY = TerrainManager.getTerrainHeight(data.position.x, data.position.z);
-        data.position.y = groundY;
-        v.mesh.position.set(data.position.x, data.position.y, data.position.z);
+        this.updateVehicleTerrainOrientation(v, dt);
       }
     }
 
@@ -803,6 +803,12 @@ export class VehicleSystem {
     } else {
       // Natural rolling friction coasting
       data.speed = THREE.MathUtils.lerp(data.speed, 0, dt * naturalFriction);
+    }
+
+    // Dynamic slope gravity resistance (driving uphill slows slightly, driving downhill accelerates)
+    if (data.pitch !== undefined && !data.isDrifting) {
+      const slopeForce = Math.sin(data.pitch) * 9.81 * 0.55;
+      data.speed -= slopeForce * dt;
     }
 
     // Dynamic brake lights illumination
@@ -1013,23 +1019,115 @@ export class VehicleSystem {
     data.position.x = finalX;
     data.position.z = finalZ;
 
-    // 5. Terrain Ground Adhesion and Pitch/Roll Slope Hugging
-    const groundY = TerrainManager.getTerrainHeight(data.position.x, data.position.z);
-    data.position.y = groundY;
+    // 5. Realistic 3D Terrain Pitch, Roll & Ground Adhesion
+    this.updateVehicleTerrainOrientation(veh, dt);
+  }
 
-    // Sample terrain ahead and behind for natural vehicle slope pitch
-    const frontX = data.position.x + Math.sin(data.rotation) * 1.2;
-    const frontZ = data.position.z + Math.cos(data.rotation) * 1.2;
-    const rearX = data.position.x - Math.sin(data.rotation) * 1.2;
-    const rearZ = data.position.z - Math.cos(data.rotation) * 1.2;
+  /**
+   * Calculates realistic 3D terrain ground-contact, pitch, and roll orientation.
+   * Samples all 4 wheels on the heightmap, derives the surface normal,
+   * aligns the vehicle's Up vector with the slope, and orients its Forward vector
+   * along the heading tangent.
+   */
+  public updateVehicleTerrainOrientation(
+    veh: { data: VehicleData; mesh: THREE.Group; parts: WheelMeshes },
+    dt: number,
+    immediate: boolean = false
+  ) {
+    const data = veh.data;
+    const posX = data.position.x;
+    const posZ = data.position.z;
+    const yaw = data.rotation;
 
-    const yFront = TerrainManager.getTerrainHeight(frontX, frontZ);
-    const yRear = TerrainManager.getTerrainHeight(rearX, rearZ);
-    const slopePitch = Math.atan2(yFront - yRear, 2.4);
+    // Contact dimensions (matching 1.46 vehicle scale)
+    const isBike = data.type === 'hover_cycle';
+    const isBuggy = data.type === 'buggy_offroad';
+    const halfL = isBuggy ? 1.4 : isBike ? 1.2 : 1.28;
+    const halfW = isBuggy ? 1.05 : isBike ? 0.35 : 0.85;
 
+    // Heading vectors on horizontal plane (XZ)
+    const fwdX = Math.sin(yaw);
+    const fwdZ = Math.cos(yaw);
+    const rightX = Math.cos(yaw);
+    const rightZ = -Math.sin(yaw);
+
+    // 1. Sample 4 wheel contact points on the terrain heightmap
+    const flX = posX + fwdX * halfL - rightX * halfW;
+    const flZ = posZ + fwdZ * halfL - rightZ * halfW;
+    const flY = TerrainManager.getTerrainHeight(flX, flZ);
+
+    const frX = posX + fwdX * halfL + rightX * halfW;
+    const frZ = posZ + fwdZ * halfL + rightZ * halfW;
+    const frY = TerrainManager.getTerrainHeight(frX, frZ);
+
+    const rlX = posX - fwdX * halfL - rightX * halfW;
+    const rlZ = posZ - fwdZ * halfL - rightZ * halfW;
+    const rlY = TerrainManager.getTerrainHeight(rlX, rlZ);
+
+    const rrX = posX - fwdX * halfL + rightX * halfW;
+    const rrZ = posZ - fwdZ * halfL + rightZ * halfW;
+    const rrY = TerrainManager.getTerrainHeight(rrX, rrZ);
+
+    // Ground elevation under vehicle chassis
+    const avgWheelY = (flY + frY + rlY + rrY) * 0.25;
+    const centerY = TerrainManager.getTerrainHeight(posX, posZ);
+    // Use maximum of wheel average and center to prevent chassis scraping on sharp ridge crests
+    data.position.y = Math.max(avgWheelY, centerY - 0.05);
+
+    // 2. Derive Longitudinal (pitch) and Lateral (roll) ground tangents
+    const frontY = (flY + frY) * 0.5;
+    const rearY = (rlY + rrY) * 0.5;
+    const vLongitudinal = new THREE.Vector3(
+      fwdX * (2.0 * halfL),
+      frontY - rearY,
+      fwdZ * (2.0 * halfL)
+    ).normalize();
+
+    const rightY = (frY + rrY) * 0.5;
+    const leftY = (flY + rlY) * 0.5;
+    const vLateral = new THREE.Vector3(
+      rightX * (2.0 * halfW),
+      rightY - leftY,
+      rightZ * (2.0 * halfW)
+    ).normalize();
+
+    // 3. Exact ground normal vector
+    // Longitudinal (+Z forward) x Lateral (+X right) = Surface Normal (+Y up)
+    let normalVec = new THREE.Vector3().crossVectors(vLongitudinal, vLateral).normalize();
+    if (normalVec.y < 0.2) {
+      normalVec.set(0, 1, 0);
+    }
+    // Blend with sampled center normal to guarantee buttery smoothness over bumpy terrain
+    const centerNormal = TerrainManager.getTerrainNormal(posX, posZ);
+    normalVec.add(centerNormal.multiplyScalar(0.75)).normalize();
+
+    // 4. Construct Orthonormal Basis:
+    // Project flat forward heading onto the slope plane
+    const flatFwd = new THREE.Vector3(fwdX, 0, fwdZ);
+    const tangentFwd = flatFwd
+      .clone()
+      .sub(normalVec.clone().multiplyScalar(flatFwd.dot(normalVec)))
+      .normalize();
+
+    // Lateral tangent perpendicular to normal and forward
+    const tangentRight = new THREE.Vector3().crossVectors(normalVec, tangentFwd).normalize();
+
+    // Store pitch and roll angles (in radians) for physics & camera
+    data.pitch = Math.asin(THREE.MathUtils.clamp(tangentFwd.y, -1.0, 1.0));
+    data.roll = Math.asin(THREE.MathUtils.clamp(tangentRight.y, -1.0, 1.0));
+
+    // 5. Rotation Matrix & Quaternion
+    const rotMat = new THREE.Matrix4().makeBasis(tangentRight, normalVec, tangentFwd);
+    const targetQuat = new THREE.Quaternion().setFromRotationMatrix(rotMat);
+
+    // 6. Apply position & smoothed quaternion
     veh.mesh.position.set(data.position.x, data.position.y, data.position.z);
-    veh.mesh.rotation.y = data.rotation;
-    veh.mesh.rotation.x = THREE.MathUtils.lerp(veh.mesh.rotation.x, slopePitch, dt * 9.0);
+    if (immediate) {
+      veh.mesh.quaternion.copy(targetQuat);
+    } else {
+      const slerpFactor = Math.min(1.0, dt * 15.0);
+      veh.mesh.quaternion.slerp(targetQuat, slerpFactor);
+    }
   }
 
   // ==========================================
@@ -1050,21 +1148,18 @@ export class VehicleSystem {
         ? new THREE.Color(0xf97316)
         : new THREE.Color(0x38bdf8);
 
-    const pos = veh.mesh.position;
-    const yaw = veh.data.rotation;
+    const backwardDir = new THREE.Vector3(0, 0, -1).applyQuaternion(veh.mesh.quaternion);
 
-    // Spawn sparks from both rear wheels
+    // Spawn sparks from both rear wheels relative to tilted chassis
     [-0.75, 0.75].forEach((offsetX) => {
-      const rx = pos.x + Math.cos(yaw) * offsetX - Math.sin(yaw) * 0.8;
-      const rz = pos.z + Math.sin(yaw) * offsetX - Math.cos(yaw) * 0.8;
-      const ry = pos.y + 0.15;
+      const worldSpark = veh.mesh.localToWorld(new THREE.Vector3(offsetX, 0.15, -0.8));
 
       this.sparkParticles.push({
-        pos: new THREE.Vector3(rx, ry, rz),
+        pos: worldSpark,
         vel: new THREE.Vector3(
-          (Math.random() - 0.5) * 4.0 - Math.sin(yaw) * 3.0,
-          Math.random() * 2.5 + 0.5,
-          (Math.random() - 0.5) * 4.0 - Math.cos(yaw) * 3.0
+          (Math.random() - 0.5) * 4.0 + backwardDir.x * 3.0,
+          Math.random() * 2.5 + 0.5 + backwardDir.y * 2.0,
+          (Math.random() - 0.5) * 4.0 + backwardDir.z * 3.0
         ),
         life: 0,
         maxLife: 0.35 + Math.random() * 0.2,
@@ -1093,20 +1188,17 @@ export class VehicleSystem {
 
   private spawnBoostFlame(veh: { data: VehicleData; mesh: THREE.Group; parts: WheelMeshes }) {
     if (this.flameParticles.length >= 170) return;
-    const pos = veh.mesh.position;
-    const yaw = veh.data.rotation;
+    const backwardDir = new THREE.Vector3(0, 0, -1).applyQuaternion(veh.mesh.quaternion);
 
     veh.parts.exhaustPipes.forEach((pipe) => {
-      const px = pos.x + Math.cos(yaw) * pipe.x + Math.sin(yaw) * pipe.z;
-      const pz = pos.z - Math.sin(yaw) * pipe.x + Math.cos(yaw) * pipe.z;
-      const py = pos.y + pipe.y;
+      const worldPipe = veh.mesh.localToWorld(pipe.clone());
 
       this.flameParticles.push({
-        pos: new THREE.Vector3(px, py, pz),
+        pos: worldPipe,
         vel: new THREE.Vector3(
-          -Math.sin(yaw) * 14.0 + (Math.random() - 0.5) * 1.5,
-          (Math.random() - 0.5) * 1.0,
-          -Math.cos(yaw) * 14.0 + (Math.random() - 0.5) * 1.5
+          backwardDir.x * 14.0 + (Math.random() - 0.5) * 1.5,
+          backwardDir.y * 14.0 + (Math.random() - 0.5) * 1.0,
+          backwardDir.z * 14.0 + (Math.random() - 0.5) * 1.5
         ),
         life: 0,
         maxLife: 0.2 + Math.random() * 0.1,

@@ -503,14 +503,15 @@ export class GameEngine {
               const activeVeh = this.vehicleSystem.vehicles[this.vehicleSystem.activeVehicleIndex];
               if (activeVeh) {
                 // Place avatar hero realistically into the bucket seat behind the steering wheel
-                const yaw = activeVeh.data.rotation;
-                const seatLocalZ = -0.32;
-                const seatLocalY = 0.42;
-                const worldX = activeVeh.data.position.x + Math.sin(yaw) * seatLocalZ;
-                const worldZ = activeVeh.data.position.z + Math.cos(yaw) * seatLocalZ;
-                const worldY = activeVeh.data.position.y + seatLocalY;
+                // localToWorld accounts for the car's 3D position, yaw, pitch, and roll on slopes
+                const isBuggy = activeVeh.data.type === 'buggy_offroad';
+                const isBike = activeVeh.data.type === 'hover_cycle';
+                const seatLocalZ = isBuggy ? -0.22 : isBike ? -0.15 : -0.20;
+                const seatLocalY = isBuggy ? 0.38 : isBike ? 0.48 : 0.36;
 
-                this.physics.position.set(worldX, worldY, worldZ);
+                const seatWorldPos = activeVeh.mesh.localToWorld(new THREE.Vector3(0, seatLocalY, seatLocalZ));
+
+                this.physics.position.copy(seatWorldPos);
                 this.physics.rotation = activeVeh.data.rotation;
                 this.physics.velocity.set(0, 0, 0);
                 this.physics.actionState = 'DRIVE';
@@ -518,6 +519,7 @@ export class GameEngine {
                 // GTA-style Chase Camera
                 this.cameraControls.isDrivingMode = true;
                 this.cameraControls.drivingVehicleYaw = activeVeh.data.rotation;
+                this.cameraControls.drivingVehiclePitch = activeVeh.data.pitch || 0;
                 this.cameraControls.drivingSpeed = activeVeh.data.speed;
                 this.cameraControls.drivingIsTurbo = activeVeh.data.turboTimer > 0;
               }
@@ -628,9 +630,16 @@ export class GameEngine {
       audioEngine.playMusic(isNight ? 'night' : 'day');
     }
 
-    // 2. Avatar Mesh Sync with Physics
+    // 2. Avatar Mesh Sync with Physics & Vehicle Orientation
     this.avatar.mesh.position.copy(this.physics.position);
-    this.avatar.mesh.rotation.y = this.physics.rotation;
+    if (this.vehicleSystem.activeVehicleIndex >= 0) {
+      const activeVeh = this.vehicleSystem.vehicles[this.vehicleSystem.activeVehicleIndex];
+      if (activeVeh) {
+        this.avatar.mesh.quaternion.copy(activeVeh.mesh.quaternion);
+      }
+    } else {
+      this.avatar.mesh.rotation.set(0, this.physics.rotation, 0);
+    }
 
     // Avatar animation loop
     this.avatar.updateAnimation(delta, this.physics.actionState, horizSpeed);
@@ -1320,6 +1329,8 @@ export class GameEngine {
         this.physics.position.copy(exitRes.exitPos);
         this.physics.actionState = 'IDLE';
         this.cameraControls.isDrivingMode = false;
+        this.cameraControls.drivingVehiclePitch = 0;
+        this.avatar.mesh.rotation.set(0, this.physics.rotation, 0);
         if (this.onToastMessage) this.onToastMessage(exitRes.message);
         return exitRes.message;
       }
@@ -1403,6 +1414,8 @@ export class GameEngine {
       this.vehicleSystem.exitVehicle();
     }
     this.cameraControls.isDrivingMode = false;
+    this.cameraControls.drivingVehiclePitch = 0;
+    this.avatar.mesh.rotation.set(0, 0, 0);
 
     this.terrainDeformation.clearAllDeltas();
     this.editorManager.resetWorldToDefault();
