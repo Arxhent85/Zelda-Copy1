@@ -28,6 +28,15 @@ export const StarFoxGame: React.FC<StarFoxGameProps> = ({ onBackToMenu }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const engineRef = useRef<StarFoxEngine | null>(null);
 
+  // 60 FPS Reticle DOM refs (no React re-render per frame!)
+  const reticleFarRef = useRef<HTMLDivElement>(null);
+  const reticleFarBoxRef = useRef<HTMLDivElement>(null);
+  const reticleFarDotRef = useRef<HTMLDivElement>(null);
+  const reticleLockLabelRef = useRef<HTMLDivElement>(null);
+  const reticleNearRef = useRef<HTMLDivElement>(null);
+  const reticleNearRingRef = useRef<HTMLDivElement>(null);
+  const tiltDotRef = useRef<HTMLDivElement>(null);
+
   const [gameState, setGameState] = useState<StarFoxState>({
     shield: 100,
     maxShield: 100,
@@ -36,13 +45,11 @@ export const StarFoxGame: React.FC<StarFoxGameProps> = ({ onBackToMenu }) => {
     smartBombs: 3,
     score: 0,
     hits: 0,
-    speed: 108,
+    speed: 58,
     progressPercent: 0,
     weaponLevel: 1,
     zoneName: 'CORNERIA OUTER BAY',
     bossHealth: null,
-    reticleNear: { x: 50, y: 50 },
-    reticleFar: { x: 50, y: 50 },
     isTargetLocked: false,
     dialogue: {
       speaker: 'COMMANDER VANCE',
@@ -60,8 +67,17 @@ export const StarFoxGame: React.FC<StarFoxGameProps> = ({ onBackToMenu }) => {
   // Steering Mode: 'touch' vs 'tilt'
   const [steeringMode, setSteeringMode] = useState<'touch' | 'tilt'>('touch');
   const [sensorStatus, setSensorStatus] = useState<'idle' | 'checking' | 'active' | 'blocked'>('idle');
+  const [invertTiltX, setInvertTiltX] = useState(false);
+  const [invertTiltY, setInvertTiltY] = useState(false);
+
+  const steeringModeRef = useRef<'touch' | 'tilt'>('touch');
+  const sensorStatusRef = useRef<'idle' | 'checking' | 'active' | 'blocked'>('idle');
+  const invertTiltXRef = useRef(false);
+  const invertTiltYRef = useRef(false);
+
   const neutralTilt = useRef<{ roll: number; pitch: number }>({ roll: 0, pitch: 0 });
   const latestTilt = useRef<{ roll: number; pitch: number }>({ roll: 0, pitch: 0 });
+  const smoothedDelta = useRef<{ roll: number; pitch: number }>({ roll: 0, pitch: 0 });
   const sensorSamplesRef = useRef<number>(0);
 
   // Virtual Joystick touch state
@@ -71,6 +87,22 @@ export const StarFoxGame: React.FC<StarFoxGameProps> = ({ onBackToMenu }) => {
   const activeTouchId = useRef<number | null>(null);
   const lastTapTimeRef = useRef<number>(0);
   const lastKeyTime = useRef<{ [key: string]: number }>({});
+
+  useEffect(() => {
+    steeringModeRef.current = steeringMode;
+  }, [steeringMode]);
+
+  useEffect(() => {
+    sensorStatusRef.current = sensorStatus;
+  }, [sensorStatus]);
+
+  useEffect(() => {
+    invertTiltXRef.current = invertTiltX;
+  }, [invertTiltX]);
+
+  useEffect(() => {
+    invertTiltYRef.current = invertTiltY;
+  }, [invertTiltY]);
 
   const toggleFullscreen = () => {
     if (!document.fullscreenElement) {
@@ -99,12 +131,18 @@ export const StarFoxGame: React.FC<StarFoxGameProps> = ({ onBackToMenu }) => {
   // -------------------------------------------------------------
   const calibrateTilt = useCallback(() => {
     neutralTilt.current = { ...latestTilt.current };
+    smoothedDelta.current = { roll: 0, pitch: 0 };
+    if (tiltDotRef.current) {
+      tiltDotRef.current.style.transform = 'translate(-50%, -50%)';
+    }
   }, []);
 
   const switchSteeringMode = async (mode: 'touch' | 'tilt') => {
     if (mode === 'tilt') {
       sensorSamplesRef.current = 0;
+      smoothedDelta.current = { roll: 0, pitch: 0 };
       setSensorStatus('checking');
+      sensorStatusRef.current = 'checking';
 
       let deniedByPrompt = false;
       // Safely try iOS / privacy browser permission APIs without throwing blocking alerts
@@ -133,6 +171,7 @@ export const StarFoxGame: React.FC<StarFoxGameProps> = ({ onBackToMenu }) => {
       }
 
       setSteeringMode('tilt');
+      steeringModeRef.current = 'tilt';
       if (engineRef.current) {
         engineRef.current.inputYawRoll = 0;
         engineRef.current.inputPitch = 0;
@@ -142,14 +181,19 @@ export const StarFoxGame: React.FC<StarFoxGameProps> = ({ onBackToMenu }) => {
       window.setTimeout(() => {
         if (sensorSamplesRef.current > 0) {
           setSensorStatus('active');
+          sensorStatusRef.current = 'active';
           calibrateTilt();
         } else {
-          setSensorStatus(deniedByPrompt ? 'blocked' : 'blocked');
+          const next = deniedByPrompt ? 'blocked' : 'blocked';
+          setSensorStatus(next);
+          sensorStatusRef.current = next;
         }
       }, 900);
     } else {
       setSteeringMode('touch');
+      steeringModeRef.current = 'touch';
       setSensorStatus('idle');
+      sensorStatusRef.current = 'idle';
       if (engineRef.current) {
         engineRef.current.inputYawRoll = 0;
         engineRef.current.inputPitch = 0;
@@ -158,18 +202,48 @@ export const StarFoxGame: React.FC<StarFoxGameProps> = ({ onBackToMenu }) => {
   };
 
   useEffect(() => {
-    const applyTiltSteering = (rollDeg: number, pitchDeg: number) => {
+    const wrap180 = (deg: number) => {
+      let a = (((deg + 180) % 360) + 360) % 360 - 180;
+      if (a < -180) a += 360;
+      return a;
+    };
+
+    let lastSource: 'orientation' | 'motion' | 'w3c' | null = null;
+    let lastOrientationMs = 0;
+
+    const applyTiltSteering = (rollDeg: number, pitchDeg: number, source: 'orientation' | 'motion' | 'w3c') => {
+      const now = performance.now();
+      if (source === 'orientation') {
+        lastOrientationMs = now;
+        lastSource = 'orientation';
+      } else if (source === 'motion' && lastSource === 'orientation' && now - lastOrientationMs < 500) {
+        // Orientation events are active — avoid mixing incompatible euler vs atan2 angles
+        sensorSamplesRef.current += 1;
+        return;
+      }
+
       latestTilt.current = { roll: rollDeg, pitch: pitchDeg };
       sensorSamplesRef.current += 1;
 
-      if (steeringMode !== 'tilt' || !engineRef.current) return;
-      if (sensorStatus !== 'active') setSensorStatus('active');
+      if (steeringModeRef.current !== 'tilt' || !engineRef.current) return;
+      if (sensorStatusRef.current !== 'active') {
+        sensorStatusRef.current = 'active';
+        setSensorStatus('active');
+        // Auto-calibrate on first live sample so plane never jerks
+        neutralTilt.current = { roll: rollDeg, pitch: pitchDeg };
+        smoothedDelta.current = { roll: 0, pitch: 0 };
+      }
 
-      const dRoll = rollDeg - neutralTilt.current.roll;
-      const dPitch = pitchDeg - neutralTilt.current.pitch;
+      const rawDRoll = wrap180(rollDeg - neutralTilt.current.roll);
+      const rawDPitch = wrap180(pitchDeg - neutralTilt.current.pitch);
 
-      const maxTilt = 24.0;
-      const deadzone = 2.0;
+      // Exponential moving average (EMA) low-pass filter to eliminate handheld micro-jitter
+      const alpha = 0.24;
+      smoothedDelta.current.roll += (rawDRoll - smoothedDelta.current.roll) * alpha;
+      smoothedDelta.current.pitch += (rawDPitch - smoothedDelta.current.pitch) * alpha;
+
+      const maxTilt = 22.0;
+      const deadzone = 1.8;
 
       const shape = (delta: number) => {
         if (Math.abs(delta) < deadzone) return 0;
@@ -177,8 +251,21 @@ export const StarFoxGame: React.FC<StarFoxGameProps> = ({ onBackToMenu }) => {
         return Math.sign(delta) * Math.min(1, Math.pow(norm, 0.85));
       };
 
-      engineRef.current.inputYawRoll = shape(dRoll);
-      engineRef.current.inputPitch = shape(dPitch);
+      const xSign = invertTiltXRef.current ? -1 : 1;
+      const ySign = invertTiltYRef.current ? -1 : 1;
+
+      const yaw = shape(smoothedDelta.current.roll) * xSign;
+      const pitch = shape(smoothedDelta.current.pitch) * ySign;
+
+      engineRef.current.inputYawRoll = yaw;
+      engineRef.current.inputPitch = pitch;
+
+      // Update live miniature horizon indicator dot directly via DOM ref (zero React overhead)
+      if (tiltDotRef.current) {
+        const px = yaw * 14;
+        const py = -pitch * 14;
+        tiltDotRef.current.style.transform = `translate(calc(-50% + ${px.toFixed(1)}px), calc(-50% + ${py.toFixed(1)}px))`;
+      }
     };
 
     const getScreenAngle = () => {
@@ -194,54 +281,90 @@ export const StarFoxGame: React.FC<StarFoxGameProps> = ({ onBackToMenu }) => {
       const gamma = e.gamma ?? 0;
       if (beta === 0 && gamma === 0) return;
 
-      const angle = getScreenAngle();
+      const angle = ((getScreenAngle() % 360) + 360) % 360;
       let rollDeg = 0;
       let pitchDeg = 0;
 
       if (angle === 90) {
+        // Landscape primary (Home button / USB-C on right):
+        // Tilting phone right (steering right) decreases beta, tilting forward/back changes gamma
         rollDeg = -beta;
         pitchDeg = gamma;
-      } else if (angle === -90 || angle === 270) {
+      } else if (angle === 270) {
+        // Landscape secondary (rotated 180 deg)
         rollDeg = beta;
         pitchDeg = -gamma;
+      } else if (angle === 180) {
+        rollDeg = -gamma;
+        pitchDeg = beta;
       } else {
+        // Portrait
         rollDeg = gamma;
         pitchDeg = -beta;
       }
 
-      applyTiltSteering(rollDeg, pitchDeg);
+      applyTiltSteering(rollDeg, pitchDeg, 'orientation');
     };
 
-    // Fallback: DeviceMotion gravity vector works on some Android WebViews / privacy browsers
+    // Fallback: DeviceMotion gravity vector works on Android WebViews / privacy browsers where DeviceOrientation is muted
     const handleMotion = (e: DeviceMotionEvent) => {
       const g = e.accelerationIncludingGravity;
       if (!g || g.x === null || g.y === null || g.z === null) return;
       const mag = Math.hypot(g.x, g.y, g.z);
       if (mag < 1.0) return;
 
-      const angle = getScreenAngle();
+      const angle = ((getScreenAngle() % 360) + 360) % 360;
       let rollDeg = 0;
       let pitchDeg = 0;
       const radToDeg = 180 / Math.PI;
 
       if (angle === 90) {
-        rollDeg = Math.atan2(g.y, Math.hypot(g.x, g.z)) * radToDeg;
-        pitchDeg = Math.atan2(-g.z, g.x) * radToDeg;
-      } else if (angle === -90 || angle === 270) {
         rollDeg = Math.atan2(-g.y, Math.hypot(g.x, g.z)) * radToDeg;
+        pitchDeg = Math.atan2(-g.z, g.x) * radToDeg;
+      } else if (angle === 270) {
+        rollDeg = Math.atan2(g.y, Math.hypot(g.x, g.z)) * radToDeg;
         pitchDeg = Math.atan2(-g.z, -g.x) * radToDeg;
       } else {
         rollDeg = Math.atan2(-g.x, Math.hypot(g.y, g.z)) * radToDeg;
         pitchDeg = Math.atan2(g.z, g.y) * radToDeg;
       }
 
-      // Only drive steering from DeviceMotion if DeviceOrientation isn't flooding
-      if (sensorSamplesRef.current < 3 || (latestTilt.current.roll === 0 && latestTilt.current.pitch === 0)) {
-        applyTiltSteering(rollDeg, pitchDeg);
-      } else {
-        sensorSamplesRef.current += 1;
-      }
+      applyTiltSteering(rollDeg, pitchDeg, 'motion');
     };
+
+    // Optional W3C Generic Sensor API fallback (Accelerometer)
+    let w3cAccel: any = null;
+    try {
+      const AccelCtor = (window as any).Accelerometer;
+      if (typeof AccelCtor === 'function') {
+        w3cAccel = new AccelCtor({ frequency: 60 });
+        w3cAccel.addEventListener('reading', () => {
+          if (w3cAccel.x == null || w3cAccel.y == null || w3cAccel.z == null) return;
+          if (lastSource === 'orientation' && performance.now() - lastOrientationMs < 500) return;
+          const angle = ((getScreenAngle() % 360) + 360) % 360;
+          const radToDeg = 180 / Math.PI;
+          let rollDeg = 0;
+          let pitchDeg = 0;
+          if (angle === 90) {
+            rollDeg = Math.atan2(-w3cAccel.y, Math.hypot(w3cAccel.x, w3cAccel.z)) * radToDeg;
+            pitchDeg = Math.atan2(-w3cAccel.z, w3cAccel.x) * radToDeg;
+          } else if (angle === 270) {
+            rollDeg = Math.atan2(w3cAccel.y, Math.hypot(w3cAccel.x, w3cAccel.z)) * radToDeg;
+            pitchDeg = Math.atan2(-w3cAccel.z, -w3cAccel.x) * radToDeg;
+          } else {
+            rollDeg = Math.atan2(-w3cAccel.x, Math.hypot(w3cAccel.y, w3cAccel.z)) * radToDeg;
+            pitchDeg = Math.atan2(w3cAccel.z, w3cAccel.y) * radToDeg;
+          }
+          applyTiltSteering(rollDeg, pitchDeg, 'w3c');
+        });
+        w3cAccel.addEventListener('error', () => {
+          w3cAccel = null;
+        });
+        w3cAccel.start();
+      }
+    } catch {
+      w3cAccel = null;
+    }
 
     window.addEventListener('deviceorientation', handleOrientation, true);
     window.addEventListener('deviceorientationabsolute', handleOrientation as EventListener, true);
@@ -251,8 +374,15 @@ export const StarFoxGame: React.FC<StarFoxGameProps> = ({ onBackToMenu }) => {
       window.removeEventListener('deviceorientation', handleOrientation, true);
       window.removeEventListener('deviceorientationabsolute', handleOrientation as EventListener, true);
       window.removeEventListener('devicemotion', handleMotion, true);
+      if (w3cAccel && typeof w3cAccel.stop === 'function') {
+        try {
+          w3cAccel.stop();
+        } catch {
+          // ignore
+        }
+      }
     };
-  }, [steeringMode, sensorStatus]);
+  }, []);
 
   // -------------------------------------------------------------
   // ENGINE LIFECYCLE & DESKTOP KEYBOARD INPUTS
@@ -266,6 +396,39 @@ export const StarFoxGame: React.FC<StarFoxGameProps> = ({ onBackToMenu }) => {
 
     engine.onStateUpdate = (newState) => {
       setGameState(newState);
+    };
+
+    let lastLockState = false;
+    engine.onReticleUpdate = (nearX, nearY, farX, farY, locked) => {
+      if (reticleFarRef.current) {
+        reticleFarRef.current.style.left = `${farX.toFixed(2)}%`;
+        reticleFarRef.current.style.top = `${farY.toFixed(2)}%`;
+      }
+      if (reticleNearRef.current) {
+        reticleNearRef.current.style.left = `${nearX.toFixed(2)}%`;
+        reticleNearRef.current.style.top = `${nearY.toFixed(2)}%`;
+      }
+      if (locked !== lastLockState) {
+        lastLockState = locked;
+        if (reticleFarBoxRef.current) {
+          reticleFarBoxRef.current.className = `w-10 h-10 sm:w-12 sm:h-12 border-2 rounded-sm flex items-center justify-center transition-colors ${
+            locked ? 'border-amber-400 scale-110 shadow-[0_0_16px_rgba(251,191,36,0.9)]' : 'border-cyan-400/70'
+          }`;
+        }
+        if (reticleFarDotRef.current) {
+          reticleFarDotRef.current.className = `w-1.5 h-1.5 rounded-full ${
+            locked ? 'bg-red-500 animate-ping' : 'bg-cyan-300'
+          }`;
+        }
+        if (reticleLockLabelRef.current) {
+          reticleLockLabelRef.current.style.display = locked ? 'block' : 'none';
+        }
+        if (reticleNearRingRef.current) {
+          reticleNearRingRef.current.className = `w-16 h-16 sm:w-20 sm:h-20 border rounded-full flex items-center justify-center ${
+            locked ? 'border-red-400/80' : 'border-cyan-400/35'
+          }`;
+        }
+      }
     };
 
     const handleFirstInteraction = () => {
@@ -475,37 +638,37 @@ export const StarFoxGame: React.FC<StarFoxGameProps> = ({ onBackToMenu }) => {
       <canvas ref={canvasRef} className="w-full h-full block cursor-crosshair touch-none" onContextMenu={(e) => e.preventDefault()} />
 
       {/* ------------------------------------------------------------- */}
-      {/* DYNAMIC 3D PROJECTED TWIN TARGETING RETICLES                  */}
+      {/* DYNAMIC 3D PROJECTED TWIN TARGETING RETICLES (60 FPS DOM REF) */}
       {/* Follows Arwing nose direction & turns Amber/Red on Target Lock */}
       {/* ------------------------------------------------------------- */}
       <div
-        className="absolute pointer-events-none z-10 -translate-x-1/2 -translate-y-1/2 transition-transform duration-75"
-        style={{ left: `${gameState.reticleFar.x}%`, top: `${gameState.reticleFar.y}%` }}
+        ref={reticleFarRef}
+        className="absolute pointer-events-none z-10 -translate-x-1/2 -translate-y-1/2 will-change-[left,top]"
+        style={{ left: '50%', top: '50%' }}
       >
         <div
-          className={`w-10 h-10 sm:w-12 sm:h-12 border-2 rounded-sm flex items-center justify-center transition-colors ${
-            gameState.isTargetLocked
-              ? 'border-amber-400 scale-110 shadow-[0_0_16px_rgba(251,191,36,0.9)]'
-              : 'border-cyan-400/70'
-          }`}
+          ref={reticleFarBoxRef}
+          className="w-10 h-10 sm:w-12 sm:h-12 border-2 rounded-sm flex items-center justify-center transition-colors border-cyan-400/70"
         >
-          <div className={`w-1.5 h-1.5 rounded-full ${gameState.isTargetLocked ? 'bg-red-500 animate-ping' : 'bg-cyan-300'}`} />
+          <div ref={reticleFarDotRef} className="w-1.5 h-1.5 rounded-full bg-cyan-300" />
         </div>
-        {gameState.isTargetLocked && (
-          <div className="text-[8px] font-black tracking-widest text-amber-300 text-center mt-0.5 drop-shadow">
-            LOCK
-          </div>
-        )}
+        <div
+          ref={reticleLockLabelRef}
+          style={{ display: 'none' }}
+          className="text-[8px] font-black tracking-widest text-amber-300 text-center mt-0.5 drop-shadow"
+        >
+          LOCK
+        </div>
       </div>
 
       <div
-        className="absolute pointer-events-none z-10 -translate-x-1/2 -translate-y-1/2 transition-transform duration-75"
-        style={{ left: `${gameState.reticleNear.x}%`, top: `${gameState.reticleNear.y}%` }}
+        ref={reticleNearRef}
+        className="absolute pointer-events-none z-10 -translate-x-1/2 -translate-y-1/2 will-change-[left,top]"
+        style={{ left: '50%', top: '50%' }}
       >
         <div
-          className={`w-16 h-16 sm:w-20 sm:h-20 border rounded-full flex items-center justify-center ${
-            gameState.isTargetLocked ? 'border-red-400/80' : 'border-cyan-400/35'
-          }`}
+          ref={reticleNearRingRef}
+          className="w-16 h-16 sm:w-20 sm:h-20 border rounded-full flex items-center justify-center border-cyan-400/35"
         />
       </div>
 
@@ -562,13 +725,52 @@ export const StarFoxGame: React.FC<StarFoxGameProps> = ({ onBackToMenu }) => {
       )}
 
       {steeringMode === 'tilt' && sensorStatus === 'active' && (
-        <div className="absolute bottom-24 left-4 pointer-events-auto z-30 flex items-center gap-2">
+        <div className="absolute bottom-3 left-1/2 -translate-x-1/2 pointer-events-auto z-30 flex items-center gap-1.5 bg-slate-950/85 backdrop-blur-md p-1.5 rounded-full border border-cyan-500/40 shadow-xl">
+          {/* Live Tilt Horizon Indicator */}
+          <div
+            className="relative w-8 h-8 rounded-full border border-cyan-400/50 bg-slate-900/90 shrink-0 overflow-hidden"
+            title="Live Neigungs-Horizont"
+          >
+            <div className="absolute top-1/2 left-0 right-0 h-[1px] bg-cyan-500/30" />
+            <div className="absolute left-1/2 top-0 bottom-0 w-[1px] bg-cyan-500/30" />
+            <div
+              ref={tiltDotRef}
+              className="absolute top-1/2 left-1/2 w-2.5 h-2.5 rounded-full bg-cyan-400 shadow-[0_0_8px_rgba(34,211,238,0.9)]"
+              style={{ transform: 'translate(-50%, -50%)' }}
+            />
+          </div>
+
           <button
             onClick={calibrateTilt}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-cyan-600/85 hover:bg-cyan-500 text-white text-xs font-bold border border-cyan-300/50 shadow-lg backdrop-blur-md active:scale-95 transition"
+            className="flex items-center gap-1 px-2.5 py-1.5 rounded-full bg-cyan-600 hover:bg-cyan-500 text-white text-[11px] font-bold active:scale-95 transition"
+            title="Aktuelle Haltung als Nullpunkt setzen"
           >
-            <Compass className="h-4 w-4" />
-            <span>Neigung kalibrieren</span>
+            <Compass className="h-3.5 w-3.5" />
+            <span>Kalibrieren</span>
+          </button>
+
+          <button
+            onClick={() => setInvertTiltX((v) => !v)}
+            className={`px-2 py-1.5 rounded-full text-[10px] font-black border transition active:scale-95 ${
+              invertTiltX
+                ? 'bg-amber-500 text-slate-950 border-amber-300'
+                : 'bg-slate-800/90 text-slate-300 border-slate-700 hover:text-white'
+            }`}
+            title="Links/Rechts umkehren"
+          >
+            X ↔
+          </button>
+
+          <button
+            onClick={() => setInvertTiltY((v) => !v)}
+            className={`px-2 py-1.5 rounded-full text-[10px] font-black border transition active:scale-95 ${
+              invertTiltY
+                ? 'bg-amber-500 text-slate-950 border-amber-300'
+                : 'bg-slate-800/90 text-slate-300 border-slate-700 hover:text-white'
+            }`}
+            title="Hoch/Runter umkehren"
+          >
+            Y ↕
           </button>
         </div>
       )}
