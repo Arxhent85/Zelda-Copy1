@@ -2,7 +2,13 @@ import * as THREE from 'three';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
-import { createNoise2D } from 'simplex-noise';
+import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
+import { TerrainManager } from '../Terrain';
+import { WaterManager } from '../WaterShader';
+import { SkyAndLightingManager } from '../SkyAndLighting';
+import { FoliageManager } from '../Foliage';
+import { CollectibleManager } from '../Collectibles';
+import { BuildingSystem } from '../BuildingSystem';
 import { starFoxAudio } from './StarFoxAudio';
 
 export interface StarFoxState {
@@ -15,6 +21,12 @@ export interface StarFoxState {
   hits: number;
   speed: number;
   progressPercent: number;
+  weaponLevel: 1 | 2 | 3;
+  zoneName: string;
+  bossHealth: number | null;
+  reticleNear: { x: number; y: number };
+  reticleFar: { x: number; y: number };
+  isTargetLocked: boolean;
   dialogue: {
     speaker: string;
     text: string;
@@ -25,17 +37,20 @@ export interface StarFoxState {
   shieldActive: boolean;
 }
 
-interface EnemyShip {
+interface EnemyEntity {
   mesh: THREE.Group;
-  type: 'drone' | 'corvette' | 'crystal' | 'turret';
+  type: 'drone' | 'corvette' | 'crystal' | 'mine' | 'guardian' | 'gate_core' | 'boss_core';
   health: number;
   maxHealth: number;
   points: number;
-  speed: number;
-  railOffset: THREE.Vector3;
-  railDistance: number;
+  basePos: THREE.Vector3;
+  movePhase: number;
+  moveAmpX: number;
+  moveAmpY: number;
   fireCooldown: number;
   destroyed: boolean;
+  hitRadius: number;
+  linkedBarrier?: THREE.Mesh;
 }
 
 interface Projectile {
@@ -52,25 +67,37 @@ interface RingItem {
   mesh: THREE.Group;
   position: THREE.Vector3;
   radius: number;
-  type: 'boost_arch' | 'shield_ring' | 'speed_ring';
+  type: 'boost_arch' | 'shield_ring' | 'speed_ring' | 'weapon_pod';
   collected: boolean;
 }
 
 export class StarFoxEngine {
   public canvas: HTMLCanvasElement;
   private renderer!: THREE.WebGLRenderer;
-  private composer!: EffectComposer;
+  private composer: EffectComposer | null = null;
   private scene!: THREE.Scene;
   private camera!: THREE.PerspectiveCamera;
+
+  // Integrated Zelda World Subsystems
+  private terrainManager!: TerrainManager;
+  private waterManager!: WaterManager;
+  private skyLighting!: SkyAndLightingManager;
+  private foliageManager!: FoliageManager;
+  private collectibleManager!: CollectibleManager;
+  private buildingSystem!: BuildingSystem;
+
+  // Extended Outer Ocean & Clouds
+  private outerOceanMaterial!: THREE.ShaderMaterial;
+  private cloudsGroup: THREE.Group = new THREE.Group();
 
   // Rail & Spline Path
   private splineCurve!: THREE.CatmullRomCurve3;
   public currentDistance = 0;
-  private totalDistance = 8500;
-  private baseSpeed = 105.0;
-  private currentSpeed = 105.0;
+  private totalDistance = 5200;
+  private baseSpeed = 108.0;
+  private currentSpeed = 108.0;
 
-  // Player ship
+  // Player ship & Wingmen
   private shipGroup!: THREE.Group;
   private shipMesh!: THREE.Group;
   private leftFlap!: THREE.Mesh;
@@ -79,17 +106,28 @@ export class StarFoxEngine {
   private shieldBubble!: THREE.Mesh;
   private chargeSphere!: THREE.Mesh;
   public shieldActiveTimer = 0;
+  private wingmen: { group: THREE.Group; offset: THREE.Vector3; phase: number; fireTimer: number }[] = [];
 
-  // Kinematics & steering (Agile flight physics)
+  // Agile Flight Kinematics
   public inputPitch = 0; // -1 to 1 (Up is positive)
   public inputYawRoll = 0; // -1 to 1 (Right is positive)
   public isBoosting = false;
   public isBraking = false;
   public isFiring = false;
+  public autoFire = false;
+  private fireCooldown = 0;
   private chargeTime = 0;
-  private readonly MAX_CHARGE_TIME = 1.25;
+  private readonly MAX_CHARGE_TIME = 1.1;
 
-  private shipLocalPos = new THREE.Vector3(0, 16, 0);
+  private shipLocalPos = new THREE.Vector3(0, 18, 0);
+  private shipVelX = 0;
+  private shipVelY = 0;
+  private smoothedYaw = 0;
+  private smoothedPitch = 0;
+  private smoothedRoll = 0;
+  private smoothedCamRoll = 0;
+  private currentSplineBank = 0;
+  private prevTangent = new THREE.Vector3(0, 0, -1);
 
   // Barrel Roll
   public isBarrelRolling = false;
@@ -97,7 +135,7 @@ export class StarFoxEngine {
   private barrelRollDirection: 'left' | 'right' = 'left';
   private barrelRollCooldown = 0;
 
-  // Vitals & Stats
+  // Vitals & HUD State
   public state: StarFoxState = {
     shield: 100,
     maxShield: 100,
@@ -106,8 +144,14 @@ export class StarFoxEngine {
     smartBombs: 3,
     score: 0,
     hits: 0,
-    speed: 105,
+    speed: 108,
     progressPercent: 0,
+    weaponLevel: 1,
+    zoneName: 'CORNERIA OUTER BAY',
+    bossHealth: null,
+    reticleNear: { x: 50, y: 50 },
+    reticleFar: { x: 50, y: 50 },
+    isTargetLocked: false,
     dialogue: null,
     isMissionComplete: false,
     isGameOver: false,
@@ -116,77 +160,66 @@ export class StarFoxEngine {
 
   public onStateUpdate?: (state: StarFoxState) => void;
 
-  // Environment & Objects
-  private terrainMesh!: THREE.Mesh;
-  private oceanMesh!: THREE.Mesh;
-  private oceanMaterial!: THREE.ShaderMaterial;
-  private towers: THREE.Group[] = [];
+  // World Entities
   private archesAndRings: RingItem[] = [];
-  private capitalShips: THREE.Group[] = [];
-  private enemies: EnemyShip[] = [];
+  private enemies: EnemyEntity[] = [];
+  private bossCores: EnemyEntity[] = [];
+  private dreadnoughtGroup: THREE.Group | null = null;
   private projectiles: Projectile[] = [];
-  private pineTreesGroup!: THREE.Group;
+  private activeIntervals: number[] = [];
 
-  // Particles & Visual FX
-  private explosionParticles: THREE.Points[] = [];
+  // Particles & FX
   private waterSprayParticles!: THREE.Points;
   private speedLinesMesh!: THREE.LineSegments;
   private wingtipTrailGeoLeft!: THREE.BufferGeometry;
   private wingtipTrailGeoRight!: THREE.BufferGeometry;
   private wingtipPointsLeft: THREE.Vector3[] = [];
   private wingtipPointsRight: THREE.Vector3[] = [];
-  private readonly TRAIL_LENGTH = 28;
+  private readonly TRAIL_LENGTH = 26;
 
-  // Animation & Loop
+  // Loop & Timing
   private isRunning = false;
   private animationFrameId: number | null = null;
   private clock = new THREE.Clock();
-
-  // Screen shake
+  private totalTime = 0;
   private cameraShakeIntensity = 0;
+  private lastNotifyTime = 0;
 
-  // Radio Dialogue Queue
+  // Radio Dialogue Queue (mapped by progress 0..1)
   private dialogueEvents = [
     {
-      dist: 50,
+      u: 0.01,
       speaker: 'COMMANDER VANCE',
-      text: 'All wings report in! Enemy vanguard spotted in the Hyrule Bay corridor. Weapons free!',
+      text: 'All wings! Corneria Skyscrapers ahead — weave through the towers and engage forward interceptors!',
+      duration: 4.5,
+      triggered: false,
+    },
+    {
+      u: 0.14,
+      speaker: 'FALCO',
+      text: 'Entering Hyrule Coastline! Watch for Sheikah ground guardians near the ruins!',
       duration: 4.2,
       triggered: false,
     },
     {
-      dist: 350,
-      speaker: 'COMMANDER VANCE',
-      text: 'Fly through the golden Shiekah arches for an instant SuperBoost recharge!',
-      duration: 3.8,
-      triggered: false,
-    },
-    {
-      dist: 1100,
-      speaker: 'FALCO',
-      text: 'These drones are flies on my windshield! Keep banking through the towers!',
-      duration: 3.5,
-      triggered: false,
-    },
-    {
-      dist: 2300,
+      u: 0.34,
       speaker: 'SLIPPY',
-      text: 'Shield power rings detected ahead! Fly straight through them to recharge!',
-      duration: 3.8,
+      text: 'Shoot the glowing cores on Laser Gates to shatter the barriers and grab weapon upgrades!',
+      duration: 4.2,
       triggered: false,
     },
     {
-      dist: 4500,
+      u: 0.52,
       speaker: 'PEPPY',
-      text: 'Do a Barrel Roll! Double-tap Roll to deflect hostile plasma bolts!',
-      duration: 3.6,
+      text: 'Climbing Dragon Crest Peaks! Use Barrel Rolls to deflect enemy plasma bolts!',
+      duration: 4.0,
       triggered: false,
     },
     {
-      dist: 6400,
+      u: 0.72,
       speaker: 'COMMANDER VANCE',
-      text: 'Approaching the Inner Shiekah Spire! Finish off remaining cruisers!',
-      duration: 4.0,
+      text: 'Hyrule Lake dive complete! Dreadnought Flagship spotted ahead — destroy its 3 Reactor Cores!',
+      duration: 5.0,
       triggered: false,
     },
   ];
@@ -194,30 +227,30 @@ export class StarFoxEngine {
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
     this.initThree();
+    this.createHyruleIntegratedWorld();
     this.createSpline();
     this.createSkyAndCelestial();
-    this.createHyruleLandscape();
-    this.createOcean();
+    this.createOuterOcean();
+    this.createClouds();
     this.createPlayerShip();
+    this.createWingmen();
     this.createWingtipTrails();
-    this.createWorldEntities();
+    this.createWorldEntitiesAndEncounterWave();
     this.createSpeedLines();
     this.createWaterSpray();
   }
 
   // -------------------------------------------------------------
-  // INITIALIZATION WITH VIBRANT, NON-WASHED LIGHTING
+  // INITIALIZATION (WITH ACES + BLOOM + OUTPUT PASS)
   // -------------------------------------------------------------
   private initThree() {
     this.scene = new THREE.Scene();
-    // Balanced atmospheric fog: keeps distant mountains visible without washing out
-    this.scene.fog = new THREE.Fog(0x427aa1, 150, 4800);
 
-    const width = this.canvas.clientWidth || window.innerWidth;
-    const height = this.canvas.clientHeight || window.innerHeight;
+    const width = Math.max(this.canvas.clientWidth || window.innerWidth, 100);
+    const height = Math.max(this.canvas.clientHeight || window.innerHeight, 100);
 
-    this.camera = new THREE.PerspectiveCamera(68.0, width / height, 0.5, 16000);
-    this.camera.position.set(0, 20, 20);
+    this.camera = new THREE.PerspectiveCamera(70.0, width / height, 0.5, 14000);
+    this.camera.position.set(0, 22, 600);
 
     this.renderer = new THREE.WebGLRenderer({
       canvas: this.canvas,
@@ -226,124 +259,155 @@ export class StarFoxEngine {
       precision: 'highp',
     });
     this.renderer.setSize(width, height);
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2.0));
+    const pixelRatio = Math.min(window.devicePixelRatio || 1, 2.0);
+    this.renderer.setPixelRatio(pixelRatio);
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 0.98; // Vibrant contrast, prevents white-out
+    this.renderer.toneMappingExposure = 1.08;
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
-    // Post-processing UnrealBloom: calibrated to bloom glowing lasers & thrusters only
-    this.composer = new EffectComposer(this.renderer);
-    const renderPass = new RenderPass(this.scene, this.camera);
-    this.composer.addPass(renderPass);
+    try {
+      this.composer = new EffectComposer(this.renderer);
+      this.composer.setPixelRatio(pixelRatio);
+      this.composer.addPass(new RenderPass(this.scene, this.camera));
 
-    const bloomPass = new UnrealBloomPass(
-      new THREE.Vector2(width, height),
-      0.65, // Controlled bloom intensity
-      0.35, // Tight radius
-      0.82  // High threshold so terrain doesn't glow
-    );
-    this.composer.addPass(bloomPass);
-
-    // Dynamic Hyrule Lighting
-    const ambient = new THREE.AmbientLight(0x486988, 0.65);
-    this.scene.add(ambient);
-
-    const hemi = new THREE.HemisphereLight(0x7ab6eb, 0x1d3624, 0.75);
-    this.scene.add(hemi);
-
-    const sun = new THREE.DirectionalLight(0xfff6e5, 1.85);
-    sun.position.set(380, 520, -420);
-    sun.castShadow = true;
-    sun.shadow.mapSize.width = 2048;
-    sun.shadow.mapSize.height = 2048;
-    sun.shadow.camera.near = 10;
-    sun.shadow.camera.far = 2800;
-    const d = 350;
-    sun.shadow.camera.left = -d;
-    sun.shadow.camera.right = d;
-    sun.shadow.camera.top = d;
-    sun.shadow.camera.bottom = -d;
-    sun.shadow.bias = -0.0002;
-    this.scene.add(sun);
+      const bloomPass = new UnrealBloomPass(
+        new THREE.Vector2(width, height),
+        0.38, // Crisp glowing plasma/engines without washing out terrain
+        0.35,
+        0.84
+      );
+      this.composer.addPass(bloomPass);
+      this.composer.addPass(new OutputPass());
+    } catch {
+      this.composer = null;
+    }
   }
 
   // -------------------------------------------------------------
-  // SPLINE CORRIDOR
+  // INTEGRATE REAL ZELDA HYRULE LANDSCAPE, FOLIA, SHRINES & BUILDINGS
+  // -------------------------------------------------------------
+  private createHyruleIntegratedWorld() {
+    this.terrainManager = new TerrainManager();
+    const terrainMesh = this.terrainManager.createTerrainMesh();
+    this.scene.add(terrainMesh);
+
+    this.waterManager = new WaterManager();
+    const hyruleWater = this.waterManager.createWaterMesh();
+    this.scene.add(hyruleWater);
+    this.scene.add(this.waterManager.effectsGroup);
+
+    const isMobile =
+      /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
+      window.innerWidth < 1024;
+
+    this.skyLighting = new SkyAndLightingManager(this.scene);
+    this.skyLighting.initLighting(isMobile ? 'medium' : 'high');
+    this.skyLighting.timeOfDay = 10.2;
+    this.skyLighting.timeScale = 0.08; // Slowly shifts toward golden sunset over the flight!
+
+    // Scale Zelda SkyDome to cover the grand aerial horizon and soften fog for long-range flight
+    if (this.skyLighting.skyDome) {
+      this.skyLighting.skyDome.scale.setScalar(18);
+    }
+    if (this.skyLighting.fog) {
+      this.skyLighting.fog.density = 0.00038;
+    }
+
+    // Real Zelda Trees, Rocks, Ruins, Grass, Wildflowers & Alpine Snowfall!
+    this.foliageManager = new FoliageManager(this.scene);
+    this.foliageManager.init(isMobile ? 'medium' : 'high');
+
+    // Real Zelda Sheikah Shrines with glowing cyan sky-beams & Treasures!
+    this.collectibleManager = new CollectibleManager(this.scene);
+    this.collectibleManager.initWorldObjects();
+
+    // Real Zelda Landmarks (Castles, Windmills, Watchtowers along Hyrule hillsides)
+    this.buildingSystem = new BuildingSystem(this.scene);
+    const scenicLandmarks: Array<{ type: string; x: number; z: number; rotY: number; scale: number }> = [
+      { type: 'catan_city', x: 75, z: 180, rotY: 0.5, scale: 1.5 },
+      { type: 'windmill', x: 165, z: 45, rotY: -0.4, scale: 1.4 },
+      { type: 'watchtower', x: 95, z: -90, rotY: 0.8, scale: 1.5 },
+      { type: 'catan_settlement', x: -85, z: -120, rotY: 1.2, scale: 1.4 },
+      { type: 'windmill', x: -125, z: 85, rotY: 0.2, scale: 1.3 },
+      { type: 'watchtower', x: 12, z: -45, rotY: 0.0, scale: 1.6 },
+    ];
+
+    scenicLandmarks.forEach((lm) => {
+      const y = TerrainManager.getTerrainHeight(lm.x, lm.z);
+      if (y > TerrainManager.WATER_LEVEL + 0.8) {
+        const mesh = this.buildingSystem.createStructureMesh(lm.type, false);
+        mesh.position.set(lm.x, y, lm.z);
+        mesh.rotation.y = lm.rotY;
+        mesh.scale.setScalar(lm.scale);
+        this.scene.add(mesh);
+      }
+    });
+  }
+
+  // -------------------------------------------------------------
+  // SWEEPING WINDING 3D CIRCUIT OVER HYRULE + CORNERIA BAY
   // -------------------------------------------------------------
   private createSpline() {
-    const waypoints = [
-      new THREE.Vector3(0, 16, 0),
-      new THREE.Vector3(-15, 14, -600),
-      new THREE.Vector3(25, 18, -1400),
-      new THREE.Vector3(0, 12, -2300),
-      new THREE.Vector3(-40, 16, -3400),
-      new THREE.Vector3(30, 22, -4800),
-      new THREE.Vector3(0, 28, -6200),
-      new THREE.Vector3(0, 30, -8500),
+    const rawWaypoints: Array<{ x: number; z: number; minAlt: number; clearance: number }> = [
+      { x: 0, z: 680, minAlt: 18, clearance: 15 },       // Zone 1 Launch over Corneria Bay
+      { x: 25, z: 500, minAlt: 20, clearance: 15 },      // Between glowing bay skyscrapers
+      { x: 95, z: 320, minAlt: 24, clearance: 18 },      // Eastern coast beach entry
+      { x: 195, z: 150, minAlt: 28, clearance: 18 },     // Over Whispering Forest Shrine & Windmill
+      { x: 235, z: -20, minAlt: 24, clearance: 17 },     // Emerald Valley sweeping turn
+      { x: 155, z: -155, minAlt: 13, clearance: 12 },    // Plunge low over Hyrule Lake waves!
+      { x: 25, z: -255, minAlt: 26, clearance: 18 },     // Southern cliff curve past Catan Castle
+      { x: -165, z: -175, minAlt: 24, clearance: 17 },   // Ancient Temple Ruins & Guardian Shrine
+      { x: -235, z: -15, minAlt: 34, clearance: 20 },    // Western Canyon climb
+      { x: -145, z: 140, minAlt: 56, clearance: 22 },    // High Dragon Crest Alpine Peaks!
+      { x: -30, z: 220, minAlt: 62, clearance: 22 },     // Past Dragon Crest Shrine & Snow Clouds
+      { x: 105, z: 165, minAlt: 46, clearance: 20 },     // Cloud layer dive back into Central Basin
+      { x: 10, z: 30, minAlt: 20, clearance: 15 },       // Roar low past Shrine of Awakening
+      { x: -45, z: -165, minAlt: 22, clearance: 16 },    // Outbound coastal strait
+      { x: -20, z: -410, minAlt: 22, clearance: 18 },    // Outer Bay Gauntlet
+      { x: 0, z: -680, minAlt: 28, clearance: 20 },      // Dreadnought Boss Arena
+      { x: 0, z: -960, minAlt: 34, clearance: 20 },      // Victory Flyover under Ringed Planet
     ];
-    this.splineCurve = new THREE.CatmullRomCurve3(waypoints, false, 'catmullrom', 0.45);
+
+    const points = rawWaypoints.map((wp) => {
+      let y = wp.minAlt;
+      if (Math.abs(wp.x) < 395 && Math.abs(wp.z) < 395) {
+        const groundY = TerrainManager.getTerrainHeight(wp.x, wp.z);
+        y = Math.max(wp.minAlt, groundY + wp.clearance);
+      }
+      return new THREE.Vector3(wp.x, y, wp.z);
+    });
+
+    this.splineCurve = new THREE.CatmullRomCurve3(points, false, 'catmullrom', 0.45);
+    this.totalDistance = this.splineCurve.getLength();
+    this.prevTangent = this.splineCurve.getTangentAt(0).normalize();
   }
 
   // -------------------------------------------------------------
-  // CELESTIAL BACKGROUND & SKY (RICH AZURE WITH SATURN RINGED PLANET)
+  // CELESTIAL RINGED PLANET
   // -------------------------------------------------------------
   private createSkyAndCelestial() {
-    const skyGeo = new THREE.SphereGeometry(14000, 32, 32);
-    const skyMat = new THREE.ShaderMaterial({
-      side: THREE.BackSide,
-      uniforms: {
-        topColor: { value: new THREE.Color(0x133e69) },
-        horizonColor: { value: new THREE.Color(0x609bc6) },
-        bottomColor: { value: new THREE.Color(0x0e2030) },
-      },
-      vertexShader: `
-        varying vec3 vWorldPosition;
-        void main() {
-          vec4 worldPosition = modelMatrix * vec4(position, 1.0);
-          vWorldPosition = worldPosition.xyz;
-          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-        }
-      `,
-      fragmentShader: `
-        varying vec3 vWorldPosition;
-        uniform vec3 topColor;
-        uniform vec3 horizonColor;
-        uniform vec3 bottomColor;
-        void main() {
-          float h = normalize(vWorldPosition).y;
-          vec3 sky = mix(horizonColor, topColor, clamp(h * 1.5, 0.0, 1.0));
-          sky = mix(sky, bottomColor, clamp(-h * 2.0, 0.0, 1.0));
-          gl_FragColor = vec4(sky, 1.0);
-        }
-      `,
-    });
-    const sky = new THREE.Mesh(skyGeo, skyMat);
-    this.scene.add(sky);
-
-    // Majestic Ringed Celestial Planet (Corneria / Lylat system)
     const planetGroup = new THREE.Group();
-    planetGroup.position.set(1600, 1600, -6800);
+    planetGroup.position.set(1600, 1450, -5200);
 
-    const planetGeo = new THREE.SphereGeometry(680, 64, 64);
+    const planetGeo = new THREE.SphereGeometry(620, 48, 48);
     const planetMat = new THREE.MeshStandardMaterial({
-      color: 0xebf2fa,
-      roughness: 0.8,
+      color: 0xe6eff8,
+      roughness: 0.78,
       metalness: 0.05,
-      emissive: 0x1d3557,
-      emissiveIntensity: 0.2,
+      emissive: 0x1e3a5f,
+      emissiveIntensity: 0.25,
     });
     const planet = new THREE.Mesh(planetGeo, planetMat);
     planetGroup.add(planet);
 
-    // Rings
-    const ringGeo = new THREE.RingGeometry(850, 1600, 64);
+    const ringGeo = new THREE.RingGeometry(820, 1550, 64);
     const ringMat = new THREE.MeshStandardMaterial({
-      color: 0xc5dbe8,
-      roughness: 0.65,
+      color: 0xc8e0f4,
+      roughness: 0.6,
       side: THREE.DoubleSide,
       transparent: true,
-      opacity: 0.78,
+      opacity: 0.72,
     });
     const ring = new THREE.Mesh(ringGeo, ringMat);
     ring.rotation.x = Math.PI / 2.3;
@@ -355,287 +419,170 @@ export class StarFoxEngine {
   }
 
   // -------------------------------------------------------------
-  // HYRULE COASTAL VALLEY & FJORD TERRAIN (VERDANT & DETAILED)
+  // ENDLESS SURROUNDING CORNERIA BAY OCEAN
   // -------------------------------------------------------------
-  private createHyruleLandscape() {
-    const noise2D = createNoise2D(() => 0.42);
-    const noise2DDetail = createNoise2D(() => 0.88);
-
-    const width = 1600;
-    const length = 9800;
-    const segsX = 96;
-    const segsZ = 280;
-
-    const terrainGeo = new THREE.PlaneGeometry(width, length, segsX, segsZ);
-    terrainGeo.rotateX(-Math.PI / 2);
-    terrainGeo.translate(0, 0, -4500);
-
-    const posAttr = terrainGeo.attributes.position;
-    const count = posAttr.count;
-    const colors = new Float32Array(count * 3);
-
-    const cSand = new THREE.Color(0xd9c28e);
-    const cPlainsGreen = new THREE.Color(0x4a8f27);
-    const cEmeraldValley = new THREE.Color(0x316f1d);
-    const cForestMoss = new THREE.Color(0x234d1e);
-    const cRockSlate = new THREE.Color(0x4e565f);
-    const cSnowPure = new THREE.Color(0xf4f8fb);
-
-    const color = new THREE.Color();
-
-    for (let i = 0; i < count; i++) {
-      const vx = posAttr.getX(i);
-      const vz = posAttr.getZ(i);
-
-      const distFromCenter = Math.abs(vx);
-      let vy = -6.0;
-
-      if (distFromCenter < 75.0) {
-        vy = -8.0 + noise2D(vx * 0.02, vz * 0.02) * 2.0;
-      } else {
-        const landFactor = Math.min(1.0, (distFromCenter - 75.0) / 120.0);
-        const mountainFactor = Math.max(0, (distFromCenter - 180.0) / 240.0);
-
-        const hills = (noise2D(vx * 0.005, vz * 0.005) + 0.5) * 35.0;
-        const mountains = Math.pow(mountainFactor, 1.4) * (70.0 + Math.abs(noise2DDetail(vx * 0.008, vz * 0.008)) * 120.0);
-
-        vy = -2.0 + (hills + mountains) * landFactor;
-      }
-
-      posAttr.setY(i, vy);
-
-      if (vy < 1.8) {
-        color.copy(cSand).lerp(cPlainsGreen, Math.max(0, vy / 1.8));
-      } else if (vy > 65.0) {
-        const snowT = Math.min(1.0, (vy - 65.0) / 35.0);
-        color.copy(cRockSlate).lerp(cSnowPure, snowT);
-      } else if (vy > 35.0) {
-        color.copy(cForestMoss).lerp(cRockSlate, (vy - 35.0) / 30.0);
-      } else {
-        const detailVar = (noise2DDetail(vx * 0.05, vz * 0.05) + 1.0) * 0.5;
-        color.copy(cPlainsGreen).lerp(cEmeraldValley, detailVar);
-      }
-
-      colors[i * 3 + 0] = color.r;
-      colors[i * 3 + 1] = color.g;
-      colors[i * 3 + 2] = color.b;
-    }
-
-    terrainGeo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-    terrainGeo.computeVertexNormals();
-
-    const terrainMat = new THREE.MeshStandardMaterial({
-      vertexColors: true,
-      roughness: 0.84,
-      metalness: 0.05,
-      flatShading: false,
-    });
-
-    this.terrainMesh = new THREE.Mesh(terrainGeo, terrainMat);
-    this.terrainMesh.receiveShadow = true;
-    this.scene.add(this.terrainMesh);
-
-    this.populateZeldaFoliage();
-  }
-
-  private populateZeldaFoliage() {
-    this.pineTreesGroup = new THREE.Group();
-
-    const trunkGeo = new THREE.CylinderGeometry(0.4, 0.6, 5.0, 6);
-    const trunkMat = new THREE.MeshStandardMaterial({ color: 0x4a2e16, roughness: 0.9 });
-    const foliageGeo = new THREE.ConeGeometry(3.6, 7.5, 6);
-    const foliageMat = new THREE.MeshStandardMaterial({ color: 0x1e4620, roughness: 0.75 });
-
-    const rockGeo = new THREE.IcosahedronGeometry(2.0, 1);
-    const rockMat = new THREE.MeshStandardMaterial({ color: 0x5e6872, roughness: 0.85 });
-
-    for (let i = 0; i < 180; i++) {
-      const side = Math.random() < 0.5 ? -1 : 1;
-      const x = side * (85 + Math.random() * 240);
-      const z = -200 - Math.random() * 8000;
-      const y = 8.0 + Math.random() * 32.0;
-
-      if (i % 3 === 0) {
-        const rock = new THREE.Mesh(rockGeo, rockMat);
-        rock.position.set(x, y, z);
-        const s = 0.8 + Math.random() * 1.5;
-        rock.scale.set(s, s * 0.75, s * 1.1);
-        rock.rotation.set(Math.random(), Math.random(), Math.random());
-        rock.castShadow = true;
-        this.pineTreesGroup.add(rock);
-      } else {
-        const tree = new THREE.Group();
-        tree.position.set(x, y, z);
-
-        const trunk = new THREE.Mesh(trunkGeo, trunkMat);
-        trunk.position.y = 2.5;
-        trunk.castShadow = true;
-        tree.add(trunk);
-
-        const f1 = new THREE.Mesh(foliageGeo, foliageMat);
-        f1.position.y = 6.5;
-        f1.castShadow = true;
-        tree.add(f1);
-
-        const f2 = new THREE.Mesh(foliageGeo, foliageMat);
-        f2.position.y = 9.5;
-        f2.scale.set(0.72, 0.72, 0.72);
-        f2.castShadow = true;
-        tree.add(f2);
-
-        const scale = 0.75 + Math.random() * 0.5;
-        tree.scale.set(scale, scale, scale);
-        this.pineTreesGroup.add(tree);
-      }
-    }
-
-    this.scene.add(this.pineTreesGroup);
-  }
-
-  // -------------------------------------------------------------
-  // DYNAMIC OCEAN WATER WITH SHADER WAVES & FRESNEL SPECULAR REFLECTION
-  // -------------------------------------------------------------
-  private createOcean() {
-    const oceanGeo = new THREE.PlaneGeometry(16000, 16000, 128, 128);
+  private createOuterOcean() {
+    const oceanGeo = new THREE.PlaneGeometry(14000, 14000, 96, 96);
     oceanGeo.rotateX(-Math.PI / 2);
 
-    this.oceanMaterial = new THREE.ShaderMaterial({
+    this.outerOceanMaterial = new THREE.ShaderMaterial({
       uniforms: {
-        time: { value: 0 },
-        waterColor: { value: new THREE.Color(0x0e5482) }, // Deep vibrant azure
-        deepColor: { value: new THREE.Color(0x04192b) },  // Rich deep oceanic blue
-        sunDirection: { value: new THREE.Vector3(0.45, 0.6, -0.4).normalize() },
-        sunColor: { value: new THREE.Color(0xfff8e8) },
+        uTime: { value: 0 },
+        uDeepColor: { value: new THREE.Color('#00264d') },
+        uShallowColor: { value: new THREE.Color('#14b2d1') },
+        uSunDirection: { value: new THREE.Vector3(0.45, 0.7, 0.35).normalize() },
       },
       vertexShader: `
-        uniform float time;
-        varying vec3 vNormal;
-        varying vec3 vViewPosition;
-        varying vec2 vUv;
-        varying float vElevation;
-
+        uniform float uTime;
+        varying vec3 vWorldPos;
+        varying float vWave;
         void main() {
-          vUv = uv;
           vec3 pos = position;
-
-          float wave1 = sin(pos.x * 0.035 + time * 1.5) * cos(pos.z * 0.035 + time * 1.2) * 0.45;
-          float wave2 = sin(pos.x * 0.07 - time * 2.1) * sin(pos.z * 0.06 + time * 1.8) * 0.25;
-          pos.y += wave1 + wave2;
-          vElevation = pos.y;
-
-          vec3 n = vec3(
-            -cos(pos.x * 0.035 + time * 1.5) * 0.03,
-            1.0,
-            -cos(pos.z * 0.035 + time * 1.2) * 0.03
-          );
-          vNormal = normalize(normalMatrix * n);
-
-          vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
-          vViewPosition = -mvPosition.xyz;
-          gl_Position = projectionMatrix * mvPosition;
+          float w = sin(pos.x * 0.03 + uTime * 1.4) * cos(pos.z * 0.03 + uTime * 1.1) * 0.4;
+          pos.y += w;
+          vWave = w;
+          vec4 wp = modelMatrix * vec4(pos, 1.0);
+          vWorldPos = wp.xyz;
+          gl_Position = projectionMatrix * viewMatrix * wp;
         }
       `,
       fragmentShader: `
-        uniform vec3 waterColor;
-        uniform vec3 deepColor;
-        uniform vec3 sunDirection;
-        uniform vec3 sunColor;
-        varying vec3 vNormal;
-        varying vec3 vViewPosition;
-        varying float vElevation;
-
+        uniform vec3 uDeepColor;
+        uniform vec3 uShallowColor;
+        uniform vec3 uSunDirection;
+        varying vec3 vWorldPos;
+        varying float vWave;
         void main() {
-          vec3 viewDir = normalize(vViewPosition);
-          vec3 normal = normalize(vNormal);
-
-          float fresnel = pow(1.0 - max(dot(viewDir, normal), 0.0), 3.0);
-          vec3 halfDir = normalize(sunDirection + viewDir);
-          float spec = pow(max(dot(normal, halfDir), 0.0), 54.0) * 2.2;
-
-          vec3 base = mix(deepColor, waterColor, clamp(vElevation + 0.6, 0.0, 1.0));
-          vec3 finalColor = mix(base, vec3(0.5, 0.75, 0.95), fresnel * 0.6);
-          finalColor += sunColor * spec;
-
-          gl_FragColor = vec4(finalColor, 0.94);
+          vec3 viewDir = normalize(cameraPosition - vWorldPos);
+          vec3 normal = normalize(vec3(vWave * 0.15, 1.0, -vWave * 0.15));
+          float fresnel = pow(1.0 - max(0.0, dot(viewDir, normal)), 3.2);
+          vec3 col = mix(uDeepColor, uShallowColor, clamp(vWave * 0.5 + 0.35, 0.0, 1.0));
+          col = mix(col, vec3(0.55, 0.82, 0.98), fresnel * 0.5);
+          vec3 halfDir = normalize(uSunDirection + viewDir);
+          float spec = pow(max(0.0, dot(normal, halfDir)), 50.0);
+          col += vec3(1.0, 0.96, 0.88) * spec * 1.1;
+          gl_FragColor = vec4(col, 1.0);
         }
       `,
-      transparent: true,
     });
 
-    this.oceanMesh = new THREE.Mesh(oceanGeo, this.oceanMaterial);
-    this.oceanMesh.position.y = 0.0;
-    this.oceanMesh.receiveShadow = true;
-    this.scene.add(this.oceanMesh);
+    const outerMesh = new THREE.Mesh(oceanGeo, this.outerOceanMaterial);
+    // Placed 0.12m beneath Zelda WaterManager mesh so inside [-400,400] Hyrule WaterManager takes clean priority
+    outerMesh.position.y = TerrainManager.WATER_LEVEL - 0.12;
+    this.scene.add(outerMesh);
   }
 
   // -------------------------------------------------------------
-  // PLAYER SHIP: ARWING - UNIFIED COORDINATE FRAME
-  // Local -Z is Forward (Nose). Local +Z is Backward (Thrusters towards camera).
-  // Local +X is Screen Right (Right wing). Local -X is Screen Left (Left wing).
+  // VOLUMETRIC LAYERED CLOUDS IN THE SKY & MOUNTAIN PASSES
+  // -------------------------------------------------------------
+  private createClouds() {
+    const cloudMat = new THREE.MeshStandardMaterial({
+      color: 0xffffff,
+      roughness: 0.95,
+      metalness: 0.0,
+      transparent: true,
+      opacity: 0.82,
+    });
+    const puffGeo = new THREE.SphereGeometry(14, 12, 10);
+
+    const cloudSpots = [
+      new THREE.Vector3(-120, 72, 130),
+      new THREE.Vector3(-45, 78, 215),
+      new THREE.Vector3(60, 68, 175),
+      new THREE.Vector3(160, 82, 40),
+      new THREE.Vector3(-210, 74, -60),
+      new THREE.Vector3(40, 85, -240),
+      new THREE.Vector3(-90, 92, -480),
+      new THREE.Vector3(120, 88, -620),
+      new THREE.Vector3(-180, 90, 420),
+      new THREE.Vector3(210, 95, 380),
+    ];
+
+    cloudSpots.forEach((spot) => {
+      const cluster = new THREE.Group();
+      cluster.position.copy(spot);
+      for (let i = 0; i < 5; i++) {
+        const puff = new THREE.Mesh(puffGeo, cloudMat);
+        puff.position.set(
+          (i - 2) * 14 + (Math.random() - 0.5) * 6,
+          (Math.random() - 0.5) * 5,
+          (Math.random() - 0.5) * 10
+        );
+        const sx = 1.2 + Math.random() * 0.9;
+        const sy = 0.55 + Math.random() * 0.25;
+        puff.scale.set(sx, sy, sx);
+        cluster.add(puff);
+      }
+      this.cloudsGroup.add(cluster);
+    });
+
+    this.scene.add(this.cloudsGroup);
+  }
+
+  // -------------------------------------------------------------
+  // PLAYER SHIP: ARWING - UNIFIED RIGHT-HANDED FRAME
+  // Nose = -Z, Thrusters = +Z, Right Wing = +X, Left Wing = -X
   // -------------------------------------------------------------
   private createPlayerShip() {
     this.shipGroup = new THREE.Group();
     this.shipMesh = new THREE.Group();
 
     const ceramicMat = new THREE.MeshStandardMaterial({
-      color: 0xf5f8fc,
-      roughness: 0.24,
-      metalness: 0.8,
+      color: 0xf8fafc,
+      roughness: 0.22,
+      metalness: 0.78,
     });
-
     const blueArmorMat = new THREE.MeshStandardMaterial({
       color: 0x1d4ed8,
-      roughness: 0.32,
-      metalness: 0.82,
+      roughness: 0.28,
+      metalness: 0.85,
     });
-
     const redTrimMat = new THREE.MeshStandardMaterial({
       color: 0xef4444,
-      roughness: 0.28,
+      roughness: 0.25,
       metalness: 0.65,
     });
-
     const canopyMat = new THREE.MeshPhysicalMaterial({
-      color: 0x071526,
+      color: 0x081a30,
       roughness: 0.05,
       metalness: 0.95,
       transmission: 0.85,
-      ior: 1.52,
+      ior: 1.5,
     });
 
-    // 1. Nose points forward along local -Z
-    const noseGeo = new THREE.ConeGeometry(0.85, 3.8, 6);
-    noseGeo.rotateX(-Math.PI / 2); // Apex points to -Z
+    // 1. Sleek Needle Nose (-Z forward)
+    const noseGeo = new THREE.ConeGeometry(0.85, 4.2, 6);
+    noseGeo.rotateX(-Math.PI / 2);
     const nose = new THREE.Mesh(noseGeo, ceramicMat);
-    nose.position.set(0, 0, -2.2);
+    nose.position.set(0, 0, -2.4);
     nose.castShadow = true;
     this.shipMesh.add(nose);
 
-    // 2. Fuselage Cockpit
-    const cockpitGeo = new THREE.ConeGeometry(0.72, 2.6, 6);
+    // 2. Canopy
+    const cockpitGeo = new THREE.ConeGeometry(0.7, 2.5, 6);
     cockpitGeo.rotateX(-Math.PI / 2);
     const cockpit = new THREE.Mesh(cockpitGeo, canopyMat);
-    cockpit.position.set(0, 0.45, -1.5);
+    cockpit.position.set(0, 0.45, -1.3);
     this.shipMesh.add(cockpit);
 
-    // 3. Central Core Body
-    const coreGeo = new THREE.BoxGeometry(1.6, 0.9, 3.4);
+    // 3. Central Armor Spine + Twin Side Fuselage Blasters
+    const coreGeo = new THREE.BoxGeometry(1.65, 0.9, 3.6);
     const core = new THREE.Mesh(coreGeo, blueArmorMat);
     core.position.set(0, 0, 0.2);
     core.castShadow = true;
     this.shipMesh.add(core);
 
-    // 4. Main Swept Wings (+X = Right wing, -X = Left wing)
+    [-1.4, 1.4].forEach((xOff) => {
+      const gunPod = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.24, 3.2, 8).rotateX(Math.PI / 2), blueArmorMat);
+      gunPod.position.set(xOff, -0.1, -0.5);
+      this.shipMesh.add(gunPod);
+    });
+
+    // 4. Swept Delta Wings (+X Right, -X Left)
     const wingGeo = new THREE.BufferGeometry();
     const wingVerts = new Float32Array([
-      // Right wing (+X): root, tip, trailing edge
-      0.8, 0.05, 0.2,
-      4.8, 0.4, 1.8,
-      0.8, 0.0, 1.8,
-      // Left wing (-X): root, tip, trailing edge
-      -0.8, 0.05, 0.2,
-      -0.8, 0.0, 1.8,
-      -4.8, 0.4, 1.8,
+      0.8, 0.06, 0.1, 5.0, 0.45, 1.9, 0.8, 0.0, 1.9,
+      -0.8, 0.06, 0.1, -0.8, 0.0, 1.9, -5.0, 0.45, 1.9,
     ]);
     wingGeo.setAttribute('position', new THREE.BufferAttribute(wingVerts, 3));
     wingGeo.computeVertexNormals();
@@ -643,61 +590,53 @@ export class StarFoxEngine {
     mainWings.castShadow = true;
     this.shipMesh.add(mainWings);
 
-    // Wingtip Red Fin Trim
-    const finGeo = new THREE.BoxGeometry(0.12, 1.2, 1.4);
+    // Wingtip Winglets
+    const finGeo = new THREE.BoxGeometry(0.14, 1.35, 1.5);
     const leftFin = new THREE.Mesh(finGeo, redTrimMat);
-    leftFin.position.set(-4.8, 0.5, 1.8);
+    leftFin.position.set(-5.0, 0.55, 1.9);
     this.shipMesh.add(leftFin);
 
     const rightFin = new THREE.Mesh(finGeo, redTrimMat);
-    rightFin.position.set(4.8, 0.5, 1.8);
+    rightFin.position.set(5.0, 0.55, 1.9);
     this.shipMesh.add(rightFin);
 
-    // Airbrake Ailerons
-    const flapGeo = new THREE.BoxGeometry(1.4, 0.08, 0.6);
+    // Airbrake Flaps
+    const flapGeo = new THREE.BoxGeometry(1.5, 0.08, 0.65);
     this.leftFlap = new THREE.Mesh(flapGeo, redTrimMat);
-    this.leftFlap.position.set(-2.5, 0.2, 1.9);
+    this.leftFlap.position.set(-2.6, 0.2, 2.0);
     this.shipMesh.add(this.leftFlap);
 
     this.rightFlap = new THREE.Mesh(flapGeo, redTrimMat);
-    this.rightFlap.position.set(2.5, 0.2, 1.9);
+    this.rightFlap.position.set(2.6, 0.2, 2.0);
     this.shipMesh.add(this.rightFlap);
 
-    // 5. Thruster Nozzles & Glowing Plasma Flames (pointing +Z towards camera)
-    const thrusterMat = new THREE.MeshStandardMaterial({
-      color: 0x1e293b,
-      metalness: 0.9,
-      roughness: 0.2,
-    });
-
-    const flameMat = new THREE.MeshBasicMaterial({
-      color: 0x00f0ff,
-    });
+    // 5. Afterburner Nozzles & Dynamic Plasma Plumes (+Z rear)
+    const thrusterMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, metalness: 0.9, roughness: 0.2 });
+    const flameMat = new THREE.MeshBasicMaterial({ color: 0x00f0ff });
 
     const nozzlePositions = [
-      new THREE.Vector3(-1.0, 0.1, 1.9),
-      new THREE.Vector3(1.0, 0.1, 1.9),
-      new THREE.Vector3(0.0, 0.5, 2.0),
+      new THREE.Vector3(-1.0, 0.1, 1.95),
+      new THREE.Vector3(1.0, 0.1, 1.95),
+      new THREE.Vector3(0.0, 0.45, 2.05),
     ];
 
     nozzlePositions.forEach((pos, idx) => {
-      const nozzleGeo = new THREE.CylinderGeometry(0.35, 0.42, 0.9, 12);
+      const nozzleGeo = new THREE.CylinderGeometry(0.36, 0.44, 0.95, 12);
       nozzleGeo.rotateX(Math.PI / 2);
       const nozzle = new THREE.Mesh(nozzleGeo, thrusterMat);
       nozzle.position.copy(pos);
       this.shipMesh.add(nozzle);
 
-      // Plasma Flame pointing backwards (+Z)
-      const flameGeo = new THREE.ConeGeometry(0.32, 2.2 + (idx === 2 ? 0.6 : 0), 12);
+      const flameGeo = new THREE.ConeGeometry(0.34, 2.4 + (idx === 2 ? 0.7 : 0), 12);
       flameGeo.rotateX(Math.PI / 2);
       const flame = new THREE.Mesh(flameGeo, flameMat);
-      flame.position.set(pos.x, pos.y, pos.z + 1.2);
+      flame.position.set(pos.x, pos.y, pos.z + 1.25);
       this.shipMesh.add(flame);
       this.thrusterFlames.push(flame);
     });
 
-    // 6. Shield Energy Sphere (INVISIBLE by default, only appears when hit or collecting shield ring!)
-    const shieldGeo = new THREE.IcosahedronGeometry(4.2, 2);
+    // 6. Shield Energy Sphere (Strictly invisible unless hit or collecting Shield Ring!)
+    const shieldGeo = new THREE.IcosahedronGeometry(4.3, 2);
     const shieldMat = new THREE.MeshBasicMaterial({
       color: 0x00f0ff,
       wireframe: true,
@@ -705,18 +644,18 @@ export class StarFoxEngine {
       opacity: 0.0,
     });
     this.shieldBubble = new THREE.Mesh(shieldGeo, shieldMat);
-    this.shieldBubble.visible = false; // Strictly hidden unless active!
+    this.shieldBubble.visible = false;
     this.shipMesh.add(this.shieldBubble);
 
     // 7. Nose Plasma Charge Sphere
-    const chargeGeo = new THREE.SphereGeometry(0.6, 16, 16);
+    const chargeGeo = new THREE.SphereGeometry(0.55, 16, 16);
     const chargeMat = new THREE.MeshBasicMaterial({
       color: 0x48cae4,
       transparent: true,
       opacity: 0.0,
     });
     this.chargeSphere = new THREE.Mesh(chargeGeo, chargeMat);
-    this.chargeSphere.position.set(0, 0, -4.2);
+    this.chargeSphere.position.set(0, 0, -4.5);
     this.shipMesh.add(this.chargeSphere);
 
     this.shipGroup.add(this.shipMesh);
@@ -724,474 +663,580 @@ export class StarFoxEngine {
   }
 
   // -------------------------------------------------------------
-  // 3D WINGTIP RIBBON TRAILS
+  // AI ALLIED WINGMEN (FALCO & SLIPPY FLYING IN FORMATION)
   // -------------------------------------------------------------
-  private createWingtipTrails() {
-    const trailMat = new THREE.LineBasicMaterial({
-      color: 0x00e5ff,
-      transparent: true,
-      opacity: 0.75,
-      linewidth: 2,
+  private createWingmen() {
+    const offsets = [new THREE.Vector3(-24, 6, -32), new THREE.Vector3(24, 5, -36)];
+    offsets.forEach((offset, idx) => {
+      const wingman = this.buildMiniArwing(idx === 0 ? 0x10b981 : 0x3b82f6);
+      this.scene.add(wingman);
+      this.wingmen.push({ group: wingman, offset, phase: idx * Math.PI, fireTimer: 1.5 + idx });
     });
-
-    this.wingtipTrailGeoLeft = new THREE.BufferGeometry();
-    this.wingtipTrailGeoRight = new THREE.BufferGeometry();
-
-    const initialPositions = new Float32Array(this.TRAIL_LENGTH * 3);
-    this.wingtipTrailGeoLeft.setAttribute('position', new THREE.BufferAttribute(initialPositions.slice(), 3));
-    this.wingtipTrailGeoRight.setAttribute('position', new THREE.BufferAttribute(initialPositions.slice(), 3));
-
-    const trailLeft = new THREE.Line(this.wingtipTrailGeoLeft, trailMat);
-    const trailRight = new THREE.Line(this.wingtipTrailGeoRight, trailMat);
-
-    this.scene.add(trailLeft);
-    this.scene.add(trailRight);
   }
 
-  // -------------------------------------------------------------
-  // PROCEDURAL HIGH-TECH SKYSCRAPER TEXTURE
-  // Creates glowing window grid matching the reference screenshots
-  // -------------------------------------------------------------
+  private buildMiniArwing(accentHex: number): THREE.Group {
+    const g = new THREE.Group();
+    const whiteMat = new THREE.MeshStandardMaterial({ color: 0xe2e8f0, metalness: 0.7, roughness: 0.3 });
+    const accentMat = new THREE.MeshStandardMaterial({ color: accentHex, metalness: 0.8, roughness: 0.3 });
+    const nose = new THREE.Mesh(new THREE.ConeGeometry(0.65, 3.2, 5).rotateX(-Math.PI / 2), whiteMat);
+    nose.position.z = -1.5;
+    g.add(nose);
+    const wings = new THREE.Mesh(new THREE.BoxGeometry(6.8, 0.14, 1.4), accentMat);
+    wings.position.z = 0.6;
+    g.add(wings);
+    const flame = new THREE.Mesh(
+      new THREE.ConeGeometry(0.28, 1.8, 8).rotateX(Math.PI / 2),
+      new THREE.MeshBasicMaterial({ color: accentHex })
+    );
+    flame.position.z = 2.0;
+    g.add(flame);
+    return g;
+  }
+
+  private createWingtipTrails() {
+    const trailMat = new THREE.LineBasicMaterial({ color: 0x00e5ff, transparent: true, opacity: 0.75 });
+    this.wingtipTrailGeoLeft = new THREE.BufferGeometry();
+    this.wingtipTrailGeoRight = new THREE.BufferGeometry();
+    const empty = new Float32Array(this.TRAIL_LENGTH * 3);
+    this.wingtipTrailGeoLeft.setAttribute('position', new THREE.BufferAttribute(empty.slice(), 3));
+    this.wingtipTrailGeoRight.setAttribute('position', new THREE.BufferAttribute(empty.slice(), 3));
+    this.scene.add(new THREE.Line(this.wingtipTrailGeoLeft, trailMat));
+    this.scene.add(new THREE.Line(this.wingtipTrailGeoRight, trailMat));
+  }
+
   private createSkyscraperTexture(): THREE.CanvasTexture {
     const canvas = document.createElement('canvas');
     canvas.width = 512;
     canvas.height = 1024;
     const ctx = canvas.getContext('2d')!;
-
-    // Deep high-tech metallic facade
-    ctx.fillStyle = '#0f172a';
+    ctx.fillStyle = '#0c1626';
     ctx.fillRect(0, 0, 512, 1024);
 
-    // Illuminated windows lattice
     const cols = 24;
-    const rows = 96;
+    const rows = 88;
     const cw = 512 / cols;
     const ch = 1024 / rows;
-
     for (let r = 0; r < rows; r++) {
       for (let c = 0; c < cols; c++) {
         if (Math.random() > 0.32) {
-          const rand = Math.random();
-          ctx.fillStyle = rand > 0.85 ? '#ffffff' : rand > 0.45 ? '#7dd3fc' : '#38bdf8';
+          const rnd = Math.random();
+          ctx.fillStyle = rnd > 0.85 ? '#ffffff' : rnd > 0.45 ? '#7dd3fc' : '#38bdf8';
           ctx.fillRect(c * cw + 3, r * ch + 2, cw - 6, ch - 4);
         }
       }
     }
-
-    // Vertical neon power conduits
     ctx.fillStyle = '#00f0ff';
     ctx.fillRect(0, 0, 8, 1024);
     ctx.fillRect(252, 0, 8, 1024);
     ctx.fillRect(504, 0, 8, 1024);
 
-    const texture = new THREE.CanvasTexture(canvas);
-    texture.wrapS = THREE.RepeatWrapping;
-    texture.wrapT = THREE.RepeatWrapping;
-    texture.repeat.set(2, 6);
-    return texture;
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.wrapS = THREE.RepeatWrapping;
+    tex.wrapT = THREE.RepeatWrapping;
+    tex.repeat.set(2, 6);
+    return tex;
   }
 
   // -------------------------------------------------------------
-  // WORLD ENTITIES: ILLUMINATED TOWERS, ARCHES, TARGETS & SQUADRONS
+  // WORLD ENTITIES ALONG THE SPLINE: TOWERS, GATES, ENEMIES & BOSS
   // -------------------------------------------------------------
-  private createWorldEntities() {
+  private createWorldEntitiesAndEncounterWave() {
     const skyscraperTex = this.createSkyscraperTexture();
-
-    // 1. Futuristic Spires rising from water & canyon
-    const towerPositions = [
-      new THREE.Vector3(-65, 85, -350),
-      new THREE.Vector3(70, 75, -450),
-      new THREE.Vector3(-80, 100, -900),
-      new THREE.Vector3(75, 90, -1000),
-      new THREE.Vector3(-55, 75, -1600),
-      new THREE.Vector3(90, 115, -1850),
-      new THREE.Vector3(-70, 85, -2650),
-      new THREE.Vector3(60, 95, -3200),
-      new THREE.Vector3(-85, 105, -4500),
-      new THREE.Vector3(80, 110, -5600),
-    ];
-
     const towerMat = new THREE.MeshStandardMaterial({
       map: skyscraperTex,
       metalness: 0.75,
-      roughness: 0.28,
+      roughness: 0.25,
       emissive: 0x00e5ff,
       emissiveIntensity: 0.35,
       emissiveMap: skyscraperTex,
     });
-
-    const floatingBaseMat = new THREE.MeshStandardMaterial({
-      color: 0x1e293b,
-      metalness: 0.85,
-      roughness: 0.25,
-    });
-
+    const baseMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, metalness: 0.85, roughness: 0.25 });
     const cyanNeonMat = new THREE.MeshBasicMaterial({ color: 0x00f0ff });
 
-    towerPositions.forEach((pos) => {
-      const towerGroup = new THREE.Group();
-      towerGroup.position.copy(pos);
-
-      // Main skyscraper tapered tower
-      const cylGeo = new THREE.CylinderGeometry(10, 16, 180, 24);
-      const cyl = new THREE.Mesh(cylGeo, towerMat);
-      cyl.castShadow = true;
-      towerGroup.add(cyl);
-
-      // Floating pontoon base platform at water surface
-      const baseGeo = new THREE.CylinderGeometry(24, 28, 8, 24);
-      const base = new THREE.Mesh(baseGeo, floatingBaseMat);
-      base.position.y = -85;
-      towerGroup.add(base);
-
-      // Glowing base neon ring
-      const baseRingGeo = new THREE.TorusGeometry(26, 1.1, 12, 32);
-      baseRingGeo.rotateX(Math.PI / 2);
-      const baseRing = new THREE.Mesh(baseRingGeo, cyanNeonMat);
-      baseRing.position.y = -81;
-      towerGroup.add(baseRing);
-
-      // Mid-height glowing observatory collar ring
-      const collarGeo = new THREE.TorusGeometry(14, 1.4, 12, 32);
-      collarGeo.rotateX(Math.PI / 2);
-      const collar = new THREE.Mesh(collarGeo, cyanNeonMat);
-      collar.position.y = 25;
-      towerGroup.add(collar);
-
-      // Needle antenna spire on top
-      const spireGeo = new THREE.CylinderGeometry(0.3, 1.6, 45, 12);
-      const spire = new THREE.Mesh(spireGeo, floatingBaseMat);
-      spire.position.y = 110;
-      towerGroup.add(spire);
-
-      // Antenna beacon tip
-      const beaconGeo = new THREE.SphereGeometry(1.2, 12, 12);
-      const beacon = new THREE.Mesh(beaconGeo, cyanNeonMat);
-      beacon.position.y = 132;
-      towerGroup.add(beacon);
-
-      this.scene.add(towerGroup);
-      this.towers.push(towerGroup);
-    });
-
-    // 2. Shiekah Ancient Speed Arches
-    const archPositions = [
-      new THREE.Vector3(0, 18, -300),
-      new THREE.Vector3(-12, 22, -2150),
-      new THREE.Vector3(15, 20, -4200),
+    // Corneria Bay Illuminated Towers flanking Ocean Entry (Zone 1) & Final Bay Arena (Zone 4)
+    const towerCoords: Array<{ x: number; z: number; h: number }> = [
+      { x: -65, z: 590, h: 170 },
+      { x: 75, z: 540, h: 190 },
+      { x: -75, z: 440, h: 210 },
+      { x: 95, z: 420, h: 160 },
+      { x: -95, z: -430, h: 190 },
+      { x: 85, z: -470, h: 210 },
+      { x: -115, z: -610, h: 230 },
+      { x: 115, z: -640, h: 220 },
     ];
 
-    archPositions.forEach((pos) => {
-      const archGroup = new THREE.Group();
-      archGroup.position.copy(pos);
+    towerCoords.forEach((tc) => {
+      const g = new THREE.Group();
+      g.position.set(tc.x, tc.h * 0.45, tc.z);
 
-      const archGeo = new THREE.TorusGeometry(26, 2.8, 16, 48, Math.PI);
-      const archMat = new THREE.MeshStandardMaterial({
-        color: 0xd4af37,
-        roughness: 0.25,
-        metalness: 0.85,
-      });
-      const archMesh = new THREE.Mesh(archGeo, archMat);
-      archMesh.position.y = -4;
-      archGroup.add(archMesh);
+      const body = new THREE.Mesh(new THREE.CylinderGeometry(10, 16, tc.h, 24), towerMat);
+      body.castShadow = true;
+      g.add(body);
 
-      const fieldGeo = new THREE.CircleGeometry(24, 32, 0, Math.PI);
-      const fieldMat = new THREE.MeshBasicMaterial({
-        color: 0x00f0ff,
-        transparent: true,
-        opacity: 0.45,
-        side: THREE.DoubleSide,
-      });
-      const field = new THREE.Mesh(fieldGeo, fieldMat);
-      field.position.y = -4;
-      archGroup.add(field);
+      const pontoon = new THREE.Mesh(new THREE.CylinderGeometry(24, 28, 7, 24), baseMat);
+      pontoon.position.y = -tc.h * 0.45;
+      g.add(pontoon);
 
-      this.scene.add(archGroup);
-      this.archesAndRings.push({
-        mesh: archGroup,
-        position: pos.clone(),
-        radius: 26,
-        type: 'boost_arch',
-        collected: false,
-      });
+      const baseRing = new THREE.Mesh(new THREE.TorusGeometry(26, 1.1, 10, 32).rotateX(Math.PI / 2), cyanNeonMat);
+      baseRing.position.y = -tc.h * 0.45 + 3.5;
+      g.add(baseRing);
+
+      const collar = new THREE.Mesh(new THREE.TorusGeometry(14.5, 1.4, 10, 32).rotateX(Math.PI / 2), cyanNeonMat);
+      collar.position.y = tc.h * 0.22;
+      g.add(collar);
+
+      const spire = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 1.6, 40, 10), baseMat);
+      spire.position.y = tc.h * 0.5 + 20;
+      g.add(spire);
+
+      this.scene.add(g);
     });
 
-    // 3. Shield & Speed Powerup Rings
-    const ringPositions = [
-      { pos: new THREE.Vector3(4, 16, -500), type: 'shield_ring' as const, color: 0x00f0ff },
-      { pos: new THREE.Vector3(-8, 18, -800), type: 'speed_ring' as const, color: 0xffd700 },
-      { pos: new THREE.Vector3(14, 16, -1200), type: 'shield_ring' as const, color: 0x00f0ff },
-      { pos: new THREE.Vector3(-6, 22, -1700), type: 'speed_ring' as const, color: 0xffd700 },
-      { pos: new THREE.Vector3(10, 18, -2900), type: 'shield_ring' as const, color: 0x00f0ff },
-      { pos: new THREE.Vector3(-14, 20, -3700), type: 'speed_ring' as const, color: 0xffd700 },
+    // Place Boost Arches, Shield Rings, Weapon Upgrade Pods & Laser Barrier Gates along the spline!
+    const archUs = [0.07, 0.27, 0.58, 0.81];
+    archUs.forEach((u) => {
+      const pos = this.splineCurve.getPointAt(u);
+      const tangent = this.splineCurve.getTangentAt(u).normalize();
+      this.spawnBoostArch(pos, tangent);
+    });
+
+    const shieldRingUs = [0.16, 0.42, 0.67, 0.85];
+    shieldRingUs.forEach((u, i) => {
+      const pos = this.splineCurve.getPointAt(u);
+      const tangent = this.splineCurve.getTangentAt(u).normalize();
+      const right = new THREE.Vector3().crossVectors(tangent, new THREE.Vector3(0, 1, 0)).normalize();
+      pos.addScaledVector(right, (i % 2 === 0 ? 1 : -1) * 8);
+      this.spawnCollectRing(pos, tangent, 'shield_ring', 0x00f0ff);
+    });
+
+    // Weapon Upgrade Pods (Level 1 -> 2 -> 3!)
+    [0.21, 0.51].forEach((u) => {
+      const pos = this.splineCurve.getPointAt(u);
+      const tangent = this.splineCurve.getTangentAt(u).normalize();
+      this.spawnCollectRing(pos, tangent, 'weapon_pod', 0x22c55e);
+    });
+
+    // Shootable Laser Barrier Gates (Shoot the central glowing crystal to shatter!)
+    [0.34, 0.63, 0.78].forEach((u) => {
+      const pos = this.splineCurve.getPointAt(u);
+      const tangent = this.splineCurve.getTangentAt(u).normalize();
+      this.spawnLaserGate(pos, tangent);
+    });
+
+    // Dynamic Enemy Squadrons, Crystals & Mines distributed smoothly along the ENTIRE route!
+    for (let u = 0.04; u <= 0.86; u += 0.042) {
+      const center = this.splineCurve.getPointAt(u);
+      const tangent = this.splineCurve.getTangentAt(u).normalize();
+      const right = new THREE.Vector3().crossVectors(tangent, new THREE.Vector3(0, 1, 0)).normalize();
+
+      // Spawn Dart Drone Squadron
+      const squadCount = u < 0.2 ? 3 : 4;
+      for (let k = 0; k < squadCount; k++) {
+        const offsetX = (k - (squadCount - 1) / 2) * 14;
+        const offsetY = (k % 2 === 0 ? 3 : -2);
+        const pos = center.clone().addScaledVector(right, offsetX);
+        pos.y += offsetY;
+        this.spawnDartDrone(pos, k * 1.4, 9 + k * 2, 3.5);
+      }
+
+      // Floating Shootable Crystals & Naval Mines
+      if (Math.round(u * 100) % 2 === 0) {
+        const cPos = center.clone().addScaledVector(right, (Math.random() - 0.5) * 26);
+        cPos.y += (Math.random() - 0.5) * 8;
+        this.spawnEnergyCrystal(cPos);
+      } else {
+        const mPos = center.clone().addScaledVector(right, (Math.random() - 0.5) * 24);
+        mPos.y += (Math.random() - 0.5) * 6;
+        this.spawnNavalMine(mPos);
+      }
+    }
+
+    // Heavy Corvettes in Key Sectors
+    [0.24, 0.47, 0.72].forEach((u) => {
+      const pos = this.splineCurve.getPointAt(u);
+      const tangent = this.splineCurve.getTangentAt(u).normalize();
+      pos.y += 6;
+      this.spawnHeavyCorvette(pos, tangent);
+    });
+
+    // Hyrule Ground Guardians perched on hills/ruins below spline
+    const guardianSpots = [
+      { x: 160, z: 95 },
+      { x: 195, z: -55 },
+      { x: -130, z: -120 },
+      { x: -90, z: 165 },
+      { x: 30, z: 10 },
     ];
-
-    ringPositions.forEach(({ pos, type, color }) => {
-      const ringGroup = new THREE.Group();
-      ringGroup.position.copy(pos);
-
-      const ringGeo = new THREE.TorusGeometry(7.5, 0.45, 12, 32);
-      const ringMat = new THREE.MeshBasicMaterial({ color });
-      const ringMesh = new THREE.Mesh(ringGeo, ringMat);
-      ringGroup.add(ringMesh);
-
-      this.scene.add(ringGroup);
-      this.archesAndRings.push({
-        mesh: ringGroup,
-        position: pos.clone(),
-        radius: 7.5,
-        type,
-        collected: false,
-      });
+    guardianSpots.forEach((gs) => {
+      const gy = TerrainManager.getTerrainHeight(gs.x, gs.z);
+      if (gy > TerrainManager.WATER_LEVEL + 0.5) {
+        this.spawnGroundGuardian(new THREE.Vector3(gs.x, gy + 1.5, gs.z));
+      }
     });
 
-    // 4. Aero-Carriers
-    this.createCapitalCruiser(new THREE.Vector3(65, 80, -280));
-    this.createCapitalCruiser(new THREE.Vector3(-75, 68, -750));
+    // Floating Aero-Carriers flanking Corneria Bay
+    this.spawnAeroCarrier(new THREE.Vector3(-85, 78, 360));
+    this.spawnAeroCarrier(new THREE.Vector3(95, 74, -460));
 
-    // 5. Populate Active Enemies & Targets Right from the Start!
-    this.spawnContinuousEnemiesAndTargets();
+    // ZONE 4 FINALE: Colossal Corneria Dreadnought Boss Cruiser!
+    this.spawnDreadnoughtBoss(new THREE.Vector3(0, 44, -760));
   }
 
-  private createCapitalCruiser(startPos: THREE.Vector3) {
-    const cruiser = new THREE.Group();
-    cruiser.position.copy(startPos);
+  private spawnBoostArch(pos: THREE.Vector3, tangent: THREE.Vector3) {
+    const g = new THREE.Group();
+    g.position.copy(pos);
+    g.lookAt(pos.clone().add(tangent));
 
-    const hullMat = new THREE.MeshStandardMaterial({
-      color: 0x334155,
-      metalness: 0.8,
-      roughness: 0.35,
-    });
-    const glowMat = new THREE.MeshBasicMaterial({ color: 0x00b4d8 });
+    const archMat = new THREE.MeshStandardMaterial({ color: 0xf59e0b, roughness: 0.25, metalness: 0.88 });
+    const arch = new THREE.Mesh(new THREE.TorusGeometry(22, 2.2, 14, 42, Math.PI), archMat);
+    arch.position.y = -4;
+    g.add(arch);
 
-    const hullGeo = new THREE.BoxGeometry(45, 14, 140);
-    const hull = new THREE.Mesh(hullGeo, hullMat);
-    hull.castShadow = true;
-    cruiser.add(hull);
+    const field = new THREE.Mesh(
+      new THREE.CircleGeometry(20, 28, 0, Math.PI),
+      new THREE.MeshBasicMaterial({ color: 0x00f0ff, transparent: true, opacity: 0.35, side: THREE.DoubleSide })
+    );
+    field.position.y = -4;
+    g.add(field);
 
-    const wingGeo = new THREE.BoxGeometry(110, 4, 65);
-    const wings = new THREE.Mesh(wingGeo, hullMat);
-    wings.position.set(0, 2, 10);
-    wings.castShadow = true;
-    cruiser.add(wings);
-
-    [-18, 0, 18].forEach((xOffset) => {
-      const plumeGeo = new THREE.ConeGeometry(6.5, 55, 16);
-      plumeGeo.rotateX(Math.PI / 2);
-      const plume = new THREE.Mesh(plumeGeo, glowMat);
-      plume.position.set(xOffset, 2, 85);
-      cruiser.add(plume);
-    });
-
-    this.scene.add(cruiser);
-    this.capitalShips.push(cruiser);
+    this.scene.add(g);
+    this.archesAndRings.push({ mesh: g, position: pos.clone(), radius: 22, type: 'boost_arch', collected: false });
   }
 
-  /**
-   * Spawns squadrons, floating energy crystals, and targets right from the start!
-   */
-  private spawnContinuousEnemiesAndTargets() {
-    // Wave 0: Immediate action at 80m - 200m!
-    const immediateSquad = [
-      new THREE.Vector3(-10, 16, -100),
-      new THREE.Vector3(10, 16, -100),
-      new THREE.Vector3(0, 22, -140),
-      new THREE.Vector3(-18, 14, -180),
-      new THREE.Vector3(18, 14, -180),
-    ];
-    immediateSquad.forEach((pos) => this.spawnDartDrone(pos));
+  private spawnCollectRing(
+    pos: THREE.Vector3,
+    tangent: THREE.Vector3,
+    type: 'shield_ring' | 'speed_ring' | 'weapon_pod',
+    colorHex: number
+  ) {
+    const g = new THREE.Group();
+    g.position.copy(pos);
+    g.lookAt(pos.clone().add(tangent));
 
-    // Shootable Energy Crystals on the water & canyon
-    const crystals = [
-      new THREE.Vector3(-14, 8, -80),
-      new THREE.Vector3(14, 10, -120),
-      new THREE.Vector3(0, 12, -220),
-      new THREE.Vector3(-20, 14, -360),
-      new THREE.Vector3(22, 16, -480),
-      new THREE.Vector3(-12, 10, -620),
-      new THREE.Vector3(12, 18, -750),
-      new THREE.Vector3(0, 14, -920),
-      new THREE.Vector3(-18, 12, -1150),
-      new THREE.Vector3(18, 14, -1350),
-      new THREE.Vector3(0, 16, -1550),
-    ];
-    crystals.forEach((pos) => this.spawnEnergyCrystal(pos));
+    const ring = new THREE.Mesh(
+      new THREE.TorusGeometry(8.5, 0.55, 12, 32),
+      new THREE.MeshBasicMaterial({ color: colorHex })
+    );
+    g.add(ring);
 
-    // Wave 1: Inverted-Vee Drone Squadron at -450m
-    const wave1 = [
-      new THREE.Vector3(0, 18, -450),
-      new THREE.Vector3(-14, 22, -490),
-      new THREE.Vector3(14, 22, -490),
-      new THREE.Vector3(-28, 26, -530),
-      new THREE.Vector3(28, 26, -530),
-    ];
-    wave1.forEach((pos) => this.spawnDartDrone(pos));
+    if (type === 'weapon_pod') {
+      const core = new THREE.Mesh(
+        new THREE.OctahedronGeometry(2.5, 0),
+        new THREE.MeshBasicMaterial({ color: 0xfacc15, wireframe: true })
+      );
+      g.add(core);
+    }
 
-    // Wave 2: Heavy Gunships & Corvettes
-    this.spawnHeavyCorvette(new THREE.Vector3(-20, 24, -980));
-    this.spawnHeavyCorvette(new THREE.Vector3(20, 24, -1380));
-    this.spawnHeavyCorvette(new THREE.Vector3(0, 28, -2100));
-
-    // Wave 3: Canyon Ambush Squadrons
-    const wave3 = [
-      new THREE.Vector3(-16, 14, -1700),
-      new THREE.Vector3(16, 14, -1720),
-      new THREE.Vector3(0, 20, -1750),
-      new THREE.Vector3(-22, 16, -2400),
-      new THREE.Vector3(22, 16, -2420),
-      new THREE.Vector3(-10, 24, -3100),
-      new THREE.Vector3(10, 24, -3120),
-    ];
-    wave3.forEach((pos) => this.spawnDartDrone(pos));
+    this.scene.add(g);
+    this.archesAndRings.push({ mesh: g, position: pos.clone(), radius: 9.0, type, collected: false });
   }
 
-  private spawnDartDrone(pos: THREE.Vector3) {
-    const droneGroup = new THREE.Group();
-    droneGroup.position.copy(pos);
+  private spawnLaserGate(pos: THREE.Vector3, tangent: THREE.Vector3) {
+    const g = new THREE.Group();
+    g.position.copy(pos);
+    g.lookAt(pos.clone().add(tangent));
 
-    const mat = new THREE.MeshStandardMaterial({
-      color: 0x991b1b,
-      metalness: 0.8,
-      roughness: 0.3,
+    const pylonMat = new THREE.MeshStandardMaterial({ color: 0x334155, metalness: 0.85, roughness: 0.25 });
+    [-22, 22].forEach((x) => {
+      const pylon = new THREE.Mesh(new THREE.CylinderGeometry(1.8, 2.5, 36, 12), pylonMat);
+      pylon.position.set(x, 0, 0);
+      g.add(pylon);
     });
-    const glowMat = new THREE.MeshBasicMaterial({ color: 0xff0055 });
 
-    const hullGeo = new THREE.ConeGeometry(0.9, 3.4, 5);
-    hullGeo.rotateX(Math.PI / 2); // Faces towards player (+Z)
-    const hull = new THREE.Mesh(hullGeo, mat);
-    droneGroup.add(hull);
+    const barrierMat = new THREE.MeshBasicMaterial({
+      color: 0xff0055,
+      transparent: true,
+      opacity: 0.38,
+      side: THREE.DoubleSide,
+    });
+    const barrier = new THREE.Mesh(new THREE.PlaneGeometry(42, 16), barrierMat);
+    g.add(barrier);
 
-    const wingGeo = new THREE.BoxGeometry(4.2, 0.15, 1.2);
-    const wings = new THREE.Mesh(wingGeo, mat);
-    wings.position.set(0, 0, -0.4);
-    droneGroup.add(wings);
+    const coreMesh = new THREE.Mesh(
+      new THREE.OctahedronGeometry(3.8, 0),
+      new THREE.MeshStandardMaterial({
+        color: 0xff3366,
+        emissive: 0xff0055,
+        emissiveIntensity: 1.5,
+      })
+    );
+    const coreGroup = new THREE.Group();
+    coreGroup.add(coreMesh);
+    coreGroup.position.copy(pos);
+    this.scene.add(g);
+    this.scene.add(coreGroup);
 
-    const eyeGeo = new THREE.SphereGeometry(0.35, 8, 8);
-    const eye = new THREE.Mesh(eyeGeo, glowMat);
-    eye.position.set(0, 0.2, 1.6);
-    droneGroup.add(eye);
-
-    this.scene.add(droneGroup);
     this.enemies.push({
-      mesh: droneGroup,
+      mesh: coreGroup,
+      type: 'gate_core',
+      health: 30,
+      maxHealth: 30,
+      points: 1000,
+      basePos: pos.clone(),
+      movePhase: 0,
+      moveAmpX: 0,
+      moveAmpY: 0,
+      fireCooldown: 9999,
+      destroyed: false,
+      hitRadius: 7.5,
+      linkedBarrier: barrier,
+    });
+  }
+
+  private spawnDartDrone(pos: THREE.Vector3, phase: number, ampX: number, ampY: number) {
+    const g = new THREE.Group();
+    g.position.copy(pos);
+
+    const mat = new THREE.MeshStandardMaterial({ color: 0xb91c1c, metalness: 0.8, roughness: 0.25 });
+    const glowMat = new THREE.MeshBasicMaterial({ color: 0xff1e56 });
+
+    const hull = new THREE.Mesh(new THREE.ConeGeometry(1.1, 4.0, 5).rotateX(Math.PI / 2), mat);
+    g.add(hull);
+    const wings = new THREE.Mesh(new THREE.BoxGeometry(5.2, 0.2, 1.4), mat);
+    wings.position.z = -0.4;
+    g.add(wings);
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.45, 8, 8), glowMat);
+    eye.position.set(0, 0.25, 1.9);
+    g.add(eye);
+
+    this.scene.add(g);
+    this.enemies.push({
+      mesh: g,
       type: 'drone',
-      health: 20,
-      maxHealth: 20,
-      points: 150,
-      speed: 25,
-      railOffset: pos.clone(),
-      railDistance: Math.abs(pos.z),
-      fireCooldown: 1.5 + Math.random() * 1.5,
+      health: 22,
+      maxHealth: 22,
+      points: 200,
+      basePos: pos.clone(),
+      movePhase: phase,
+      moveAmpX: ampX,
+      moveAmpY: ampY,
+      fireCooldown: 1.4 + Math.random() * 1.6,
       destroyed: false,
+      hitRadius: 5.2,
     });
   }
 
-  private spawnHeavyCorvette(pos: THREE.Vector3) {
-    const corvetteGroup = new THREE.Group();
-    corvetteGroup.position.copy(pos);
+  private spawnHeavyCorvette(pos: THREE.Vector3, tangent: THREE.Vector3) {
+    const g = new THREE.Group();
+    g.position.copy(pos);
+    g.lookAt(pos.clone().sub(tangent));
 
-    const hullMat = new THREE.MeshStandardMaterial({
-      color: 0x475569,
-      metalness: 0.85,
-      roughness: 0.25,
-    });
-    const glowMat = new THREE.MeshBasicMaterial({ color: 0xff3366 });
+    const hullMat = new THREE.MeshStandardMaterial({ color: 0x475569, metalness: 0.88, roughness: 0.25 });
+    const glowMat = new THREE.MeshBasicMaterial({ color: 0xff2e63 });
 
-    const bodyGeo = new THREE.BoxGeometry(5.5, 2.2, 12);
-    const body = new THREE.Mesh(bodyGeo, hullMat);
-    body.castShadow = true;
-    corvetteGroup.add(body);
-
-    const wingGeo = new THREE.BoxGeometry(16, 0.6, 4.5);
-    const wings = new THREE.Mesh(wingGeo, hullMat);
+    const body = new THREE.Mesh(new THREE.BoxGeometry(6.5, 2.6, 15), hullMat);
+    g.add(body);
+    const wings = new THREE.Mesh(new THREE.BoxGeometry(20, 0.7, 5.2), hullMat);
     wings.position.set(0, 0.2, -1);
-    wings.castShadow = true;
-    corvetteGroup.add(wings);
-
-    [-5, 5].forEach((xOffset) => {
-      const turretGeo = new THREE.CylinderGeometry(0.5, 0.7, 1.4, 8);
-      const turret = new THREE.Mesh(turretGeo, glowMat);
-      turret.position.set(xOffset, 0.8, 1.5);
-      corvetteGroup.add(turret);
+    g.add(wings);
+    [-6, 6].forEach((xOff) => {
+      const t = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.8, 1.8, 8), glowMat);
+      t.position.set(xOff, 0.9, 1.8);
+      g.add(t);
     });
 
-    this.scene.add(corvetteGroup);
+    this.scene.add(g);
     this.enemies.push({
-      mesh: corvetteGroup,
+      mesh: g,
       type: 'corvette',
-      health: 90,
-      maxHealth: 90,
-      points: 600,
-      speed: 18,
-      railOffset: pos.clone(),
-      railDistance: Math.abs(pos.z),
-      fireCooldown: 2.2,
+      health: 100,
+      maxHealth: 100,
+      points: 750,
+      basePos: pos.clone(),
+      movePhase: Math.random() * 6,
+      moveAmpX: 12,
+      moveAmpY: 4,
+      fireCooldown: 1.8,
       destroyed: false,
+      hitRadius: 8.5,
+    });
+  }
+
+  private spawnGroundGuardian(pos: THREE.Vector3) {
+    const g = new THREE.Group();
+    g.position.copy(pos);
+
+    const stoneMat = new THREE.MeshStandardMaterial({ color: 0x3f4752, roughness: 0.7, metalness: 0.3 });
+    const magentaMat = new THREE.MeshBasicMaterial({ color: 0xff007f });
+
+    const dome = new THREE.Mesh(new THREE.ConeGeometry(3.5, 6.0, 8), stoneMat);
+    dome.position.y = 3.0;
+    g.add(dome);
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(1.2, 12, 12), magentaMat);
+    eye.position.y = 4.6;
+    g.add(eye);
+
+    this.scene.add(g);
+    this.enemies.push({
+      mesh: g,
+      type: 'guardian',
+      health: 45,
+      maxHealth: 45,
+      points: 450,
+      basePos: pos.clone(),
+      movePhase: 0,
+      moveAmpX: 0,
+      moveAmpY: 0,
+      fireCooldown: 2.0,
+      destroyed: false,
+      hitRadius: 6.5,
     });
   }
 
   private spawnEnergyCrystal(pos: THREE.Vector3) {
-    const crystalGroup = new THREE.Group();
-    crystalGroup.position.copy(pos);
-
-    const crystalGeo = new THREE.OctahedronGeometry(2.4, 0);
-    const crystalMat = new THREE.MeshStandardMaterial({
-      color: 0x00f5d4,
-      metalness: 0.1,
-      roughness: 0.1,
-      emissive: 0x00bbf9,
-      emissiveIntensity: 0.8,
-    });
-    const crystal = new THREE.Mesh(crystalGeo, crystalMat);
-    crystalGroup.add(crystal);
-
-    this.scene.add(crystalGroup);
+    const g = new THREE.Group();
+    g.position.copy(pos);
+    const mesh = new THREE.Mesh(
+      new THREE.OctahedronGeometry(2.6, 0),
+      new THREE.MeshStandardMaterial({
+        color: 0x00f5d4,
+        emissive: 0x00bbf9,
+        emissiveIntensity: 1.0,
+        roughness: 0.1,
+      })
+    );
+    g.add(mesh);
+    this.scene.add(g);
     this.enemies.push({
-      mesh: crystalGroup,
+      mesh: g,
       type: 'crystal',
-      health: 10,
-      maxHealth: 10,
-      points: 250,
-      speed: 0,
-      railOffset: pos.clone(),
-      railDistance: Math.abs(pos.z),
+      health: 12,
+      maxHealth: 12,
+      points: 300,
+      basePos: pos.clone(),
+      movePhase: 0,
+      moveAmpX: 0,
+      moveAmpY: 0,
       fireCooldown: 9999,
       destroyed: false,
+      hitRadius: 5.0,
     });
   }
 
-  // -------------------------------------------------------------
-  // VISUAL EFFECTS: SPEED LINES & LOW-ALT WATER SPRAY
-  // -------------------------------------------------------------
+  private spawnNavalMine(pos: THREE.Vector3) {
+    const g = new THREE.Group();
+    g.position.copy(pos);
+    const mine = new THREE.Mesh(
+      new THREE.IcosahedronGeometry(2.2, 0),
+      new THREE.MeshStandardMaterial({
+        color: 0x334155,
+        metalness: 0.85,
+        emissive: 0xff6b00,
+        emissiveIntensity: 0.85,
+      })
+    );
+    g.add(mine);
+    this.scene.add(g);
+    this.enemies.push({
+      mesh: g,
+      type: 'mine',
+      health: 15,
+      maxHealth: 15,
+      points: 250,
+      basePos: pos.clone(),
+      movePhase: Math.random() * 6,
+      moveAmpX: 3,
+      moveAmpY: 3,
+      fireCooldown: 9999,
+      destroyed: false,
+      hitRadius: 5.5,
+    });
+  }
+
+  private spawnAeroCarrier(startPos: THREE.Vector3) {
+    const cruiser = new THREE.Group();
+    cruiser.position.copy(startPos);
+    const hullMat = new THREE.MeshStandardMaterial({ color: 0x334155, metalness: 0.82, roughness: 0.35 });
+    const glowMat = new THREE.MeshBasicMaterial({ color: 0x00b4d8 });
+    cruiser.add(new THREE.Mesh(new THREE.BoxGeometry(45, 14, 140), hullMat));
+    const wings = new THREE.Mesh(new THREE.BoxGeometry(115, 4, 65), hullMat);
+    wings.position.set(0, 2, 10);
+    cruiser.add(wings);
+    [-18, 0, 18].forEach((xOff) => {
+      const p = new THREE.Mesh(new THREE.ConeGeometry(6.5, 55, 16).rotateX(Math.PI / 2), glowMat);
+      p.position.set(xOff, 2, 85);
+      cruiser.add(p);
+    });
+    this.scene.add(cruiser);
+  }
+
+  private spawnDreadnoughtBoss(centerPos: THREE.Vector3) {
+    const boss = new THREE.Group();
+    boss.position.copy(centerPos);
+
+    const armorMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, metalness: 0.88, roughness: 0.25 });
+    const redGlowMat = new THREE.MeshBasicMaterial({ color: 0xff0055 });
+
+    const hull = new THREE.Mesh(new THREE.BoxGeometry(75, 22, 190), armorMat);
+    boss.add(hull);
+    const bridge = new THREE.Mesh(new THREE.BoxGeometry(30, 20, 45), armorMat);
+    bridge.position.set(0, 18, 25);
+    boss.add(bridge);
+    const wing = new THREE.Mesh(new THREE.BoxGeometry(145, 5, 65), armorMat);
+    wing.position.set(0, 2, -10);
+    boss.add(wing);
+
+    this.scene.add(boss);
+    this.dreadnoughtGroup = boss;
+
+    // 3 Destructible Reactor Cores on the Dreadnought
+    const coreOffsets = [
+      new THREE.Vector3(-42, 6, 40),
+      new THREE.Vector3(42, 6, 40),
+      new THREE.Vector3(0, 18, 55),
+    ];
+    coreOffsets.forEach((off) => {
+      const cGroup = new THREE.Group();
+      const worldCorePos = centerPos.clone().add(off);
+      cGroup.position.copy(worldCorePos);
+      const orb = new THREE.Mesh(new THREE.SphereGeometry(5.5, 16, 16), redGlowMat);
+      const ring = new THREE.Mesh(
+        new THREE.TorusGeometry(7.2, 0.5, 8, 24),
+        new THREE.MeshBasicMaterial({ color: 0xfacc15 })
+      );
+      cGroup.add(orb);
+      cGroup.add(ring);
+      this.scene.add(cGroup);
+
+      const coreEntity: EnemyEntity = {
+        mesh: cGroup,
+        type: 'boss_core',
+        health: 120,
+        maxHealth: 120,
+        points: 1500,
+        basePos: worldCorePos.clone(),
+        movePhase: 0,
+        moveAmpX: 0,
+        moveAmpY: 0,
+        fireCooldown: 1.5,
+        destroyed: false,
+        hitRadius: 10.5,
+      };
+      this.enemies.push(coreEntity);
+      this.bossCores.push(coreEntity);
+    });
+  }
+
   private createSpeedLines() {
     const lineGeo = new THREE.BufferGeometry();
-    const count = 120;
+    const count = 110;
     const positions = new Float32Array(count * 6);
-
     for (let i = 0; i < count; i++) {
       const angle = Math.random() * Math.PI * 2;
-      const radius = 6.0 + Math.random() * 24.0;
+      const radius = 7.0 + Math.random() * 24.0;
       const x = Math.cos(angle) * radius;
       const y = Math.sin(angle) * radius;
-      const z = -40 + Math.random() * 100;
+      const z = -40 + Math.random() * 95;
       const len = 14 + Math.random() * 20;
-
       positions[i * 6 + 0] = x;
       positions[i * 6 + 1] = y;
       positions[i * 6 + 2] = z;
-
       positions[i * 6 + 3] = x;
       positions[i * 6 + 4] = y;
       positions[i * 6 + 5] = z + len;
     }
-
     lineGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    const lineMat = new THREE.LineBasicMaterial({
-      color: 0x99ddff,
-      transparent: true,
-      opacity: 0.35,
-    });
-
+    const lineMat = new THREE.LineBasicMaterial({ color: 0xa5f3fc, transparent: true, opacity: 0.25 });
     this.speedLinesMesh = new THREE.LineSegments(lineGeo, lineMat);
     this.camera.add(this.speedLinesMesh);
     this.scene.add(this.camera);
@@ -1199,51 +1244,142 @@ export class StarFoxEngine {
 
   private createWaterSpray() {
     const sprayGeo = new THREE.BufferGeometry();
-    const count = 180;
+    const count = 150;
     const pos = new Float32Array(count * 3);
     for (let i = 0; i < count; i++) {
-      pos[i * 3 + 0] = (Math.random() - 0.5) * 8;
-      pos[i * 3 + 1] = Math.random() * 2;
+      pos[i * 3 + 0] = (Math.random() - 0.5) * 9;
+      pos[i * 3 + 1] = Math.random() * 2.5;
       pos[i * 3 + 2] = (Math.random() - 0.5) * 12;
     }
     sprayGeo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-    const sprayMat = new THREE.PointsMaterial({
-      color: 0xffffff,
-      size: 0.65,
-      transparent: true,
-      opacity: 0.65,
-    });
-    this.waterSprayParticles = new THREE.Points(sprayGeo, sprayMat);
+    this.waterSprayParticles = new THREE.Points(
+      sprayGeo,
+      new THREE.PointsMaterial({ color: 0xffffff, size: 0.7, transparent: true, opacity: 0.68 })
+    );
     this.waterSprayParticles.visible = false;
     this.scene.add(this.waterSprayParticles);
   }
 
   // -------------------------------------------------------------
-  // CONTROLS & WEAPON ACTIONS
+  // WEAPON FIRE, AIM ASSIST & SPECIAL ABILITIES
   // -------------------------------------------------------------
+  private getShipAimDirection(shipWorldQuat: THREE.Quaternion, worldShipPos: THREE.Vector3): {
+    aimDir: THREE.Vector3;
+    lockedEnemy: EnemyEntity | null;
+  } {
+    const shipForward = new THREE.Vector3(0, 0, -1).applyQuaternion(shipWorldQuat).normalize();
+    let bestEnemy: EnemyEntity | null = null;
+    let bestDot = 0.985; // ~10 degree lock cone
+
+    for (const enemy of this.enemies) {
+      if (enemy.destroyed) continue;
+      const toEnemy = new THREE.Vector3().subVectors(enemy.mesh.position, worldShipPos);
+      const dist = toEnemy.length();
+      if (dist < 10 || dist > 460) continue;
+      const dir = toEnemy.divideScalar(dist);
+      const d = dir.dot(shipForward);
+      if (d > bestDot) {
+        bestDot = d;
+        bestEnemy = enemy;
+      }
+    }
+
+    if (bestEnemy) {
+      const aimDir = new THREE.Vector3().subVectors(bestEnemy.mesh.position, worldShipPos).normalize();
+      return { aimDir, lockedEnemy: bestEnemy };
+    }
+    return { aimDir: shipForward, lockedEnemy: null };
+  }
+
   public fireWeapon(isContinuous = false) {
     if (this.state.isGameOver || this.state.isMissionComplete) return;
+    if (isContinuous && this.fireCooldown > 0) return;
 
-    if (!isContinuous) {
-      this.spawnPlayerLaser(new THREE.Vector3(-2.8, -0.3, -2.0));
-      this.spawnPlayerLaser(new THREE.Vector3(2.8, -0.3, -2.0));
-      starFoxAudio.playLaser();
+    this.fireCooldown = 0.13;
+    const shipWorldQuat = new THREE.Quaternion();
+    this.shipMesh.getWorldQuaternion(shipWorldQuat);
+    const { aimDir } = this.getShipAimDirection(shipWorldQuat, this.shipGroup.position);
+
+    const lvl = this.state.weaponLevel;
+    if (lvl === 1) {
+      this.spawnPlayerLaser(new THREE.Vector3(-1.4, -0.1, -2.2), aimDir, 0x00f5d4, 24);
+      this.spawnPlayerLaser(new THREE.Vector3(1.4, -0.1, -2.2), aimDir, 0x00f5d4, 24);
+    } else if (lvl === 2) {
+      this.spawnPlayerLaser(new THREE.Vector3(-1.6, -0.1, -2.2), aimDir, 0x38bdf8, 30);
+      this.spawnPlayerLaser(new THREE.Vector3(1.6, -0.1, -2.2), aimDir, 0x38bdf8, 30);
+      this.spawnPlayerLaser(new THREE.Vector3(0, 0.1, -3.5), aimDir, 0xfacc15, 22);
+    } else {
+      // Lv 3 Hyper Emerald Triple-Spread
+      this.spawnPlayerLaser(new THREE.Vector3(-1.8, -0.1, -2.2), aimDir, 0x10b981, 36);
+      this.spawnPlayerLaser(new THREE.Vector3(1.8, -0.1, -2.2), aimDir, 0x10b981, 36);
+      this.spawnPlayerLaser(new THREE.Vector3(0, 0.2, -3.5), aimDir, 0x34d399, 36);
     }
+    starFoxAudio.playLaser();
+  }
+
+  private spawnPlayerLaser(localOffset: THREE.Vector3, aimDir: THREE.Vector3, colorHex: number, damage: number) {
+    const laserGeo = new THREE.CapsuleGeometry(0.22, 3.8, 4, 8);
+    laserGeo.rotateX(Math.PI / 2);
+    const laserMesh = new THREE.Mesh(laserGeo, new THREE.MeshBasicMaterial({ color: colorHex }));
+
+    this.shipMesh.updateMatrixWorld();
+    const worldPos = localOffset.clone().applyMatrix4(this.shipMesh.matrixWorld);
+    laserMesh.position.copy(worldPos);
+    laserMesh.lookAt(worldPos.clone().add(aimDir));
+
+    this.scene.add(laserMesh);
+    this.projectiles.push({
+      mesh: laserMesh,
+      position: laserMesh.position,
+      velocity: aimDir.clone().multiplyScalar(520),
+      isPlayer: true,
+      damage,
+      lifetime: 1.9,
+    });
+  }
+
+  private releaseChargeShot() {
+    starFoxAudio.playChargeShot();
+    const shipWorldQuat = new THREE.Quaternion();
+    this.shipMesh.getWorldQuaternion(shipWorldQuat);
+    const { aimDir } = this.getShipAimDirection(shipWorldQuat, this.shipGroup.position);
+
+    const chargeMesh = new THREE.Mesh(
+      new THREE.SphereGeometry(2.0, 16, 16),
+      new THREE.MeshBasicMaterial({ color: 0x38bdf8 })
+    );
+    const worldPos = new THREE.Vector3(0, 0, -4.5).applyMatrix4(this.shipMesh.matrixWorld);
+    chargeMesh.position.copy(worldPos);
+
+    this.scene.add(chargeMesh);
+    this.projectiles.push({
+      mesh: chargeMesh,
+      position: chargeMesh.position,
+      velocity: aimDir.clone().multiplyScalar(320),
+      isPlayer: true,
+      damage: 190,
+      lifetime: 2.6,
+      isChargeShot: true,
+    });
+
+    this.chargeSphere.scale.set(1, 1, 1);
+    (this.chargeSphere.material as THREE.MeshBasicMaterial).opacity = 0;
   }
 
   public triggerBarrelRoll(direction: 'left' | 'right' = 'left') {
     if (this.isBarrelRolling || this.barrelRollCooldown > 0) return;
     this.isBarrelRolling = true;
-    this.barrelRollTimer = 0.55;
+    this.barrelRollTimer = 0.52;
     this.barrelRollDirection = direction;
-    this.barrelRollCooldown = 0.75;
+    this.barrelRollCooldown = 0.65;
     this.cameraShakeIntensity = 0.22;
+    // Quick lateral dash dodge boost on roll!
+    this.shipVelX += (direction === 'left' ? -40 : 40);
     starFoxAudio.playBarrelRoll();
 
-    // Deflect nearby hostile lasers
     this.projectiles.forEach((p) => {
-      if (!p.isPlayer && p.position.distanceTo(this.shipGroup.position) < 32) {
-        p.velocity.negate().multiplyScalar(1.4);
+      if (!p.isPlayer && p.position.distanceTo(this.shipGroup.position) < 38) {
+        p.velocity.negate().multiplyScalar(1.5);
         p.isPlayer = true;
       }
     });
@@ -1253,301 +1389,260 @@ export class StarFoxEngine {
     if (this.state.smartBombs <= 0 || this.state.isGameOver) return;
     this.state.smartBombs--;
     starFoxAudio.playSmartBomb();
-    this.cameraShakeIntensity = 0.5;
+    this.cameraShakeIntensity = 0.6;
 
-    this.projectiles = this.projectiles.filter((p) => p.isPlayer);
-    this.createShockwave(this.shipGroup.position);
+    this.projectiles = this.projectiles.filter((p) => {
+      if (!p.isPlayer) {
+        this.scene.remove(p.mesh);
+        return false;
+      }
+      return true;
+    });
+    this.createShockwave(this.shipGroup.position, 45);
 
     this.enemies.forEach((enemy) => {
-      if (!enemy.destroyed) {
-        enemy.health -= 350;
+      if (!enemy.destroyed && enemy.mesh.position.distanceTo(this.shipGroup.position) < 420) {
+        enemy.health -= 260;
         if (enemy.health <= 0) {
           this.destroyEnemy(enemy);
         }
       }
     });
-
     this.notifyState();
   }
 
-  private spawnPlayerLaser(localOffset: THREE.Vector3) {
-    const laserGeo = new THREE.CapsuleGeometry(0.18, 3.2, 6, 8);
-    laserGeo.rotateX(Math.PI / 2);
-    const laserMat = new THREE.MeshBasicMaterial({
-      color: 0x00f5d4,
-    });
-    const laserMesh = new THREE.Mesh(laserGeo, laserMat);
-
-    const worldPos = localOffset.clone().applyMatrix4(this.shipMesh.matrixWorld);
-    laserMesh.position.copy(worldPos);
-
-    const progressU = Math.min(1.0, this.currentDistance / this.totalDistance);
-    const railTangent = this.splineCurve.getTangentAt(progressU).normalize();
-    const velocity = railTangent.clone().multiplyScalar(460);
-
-    this.scene.add(laserMesh);
-    this.projectiles.push({
-      mesh: laserMesh,
-      position: laserMesh.position,
-      velocity,
-      isPlayer: true,
-      damage: 25,
-      lifetime: 2.2,
-    });
-  }
-
-  private releaseChargeShot() {
-    starFoxAudio.playChargeShot();
-    const chargeGeo = new THREE.SphereGeometry(1.6, 16, 16);
-    const chargeMat = new THREE.MeshBasicMaterial({
-      color: 0x48cae4,
-    });
-    const chargeMesh = new THREE.Mesh(chargeGeo, chargeMat);
-
-    const worldPos = new THREE.Vector3(0, 0, -4.2).applyMatrix4(this.shipMesh.matrixWorld);
-    chargeMesh.position.copy(worldPos);
-
-    const progressU = Math.min(1.0, this.currentDistance / this.totalDistance);
-    const railTangent = this.splineCurve.getTangentAt(progressU).normalize();
-    const velocity = railTangent.clone().multiplyScalar(280);
-
-    this.scene.add(chargeMesh);
-    this.projectiles.push({
-      mesh: chargeMesh,
-      position: chargeMesh.position,
-      velocity,
-      isPlayer: true,
-      damage: 180,
-      lifetime: 3.0,
-      isChargeShot: true,
-    });
-
-    this.chargeSphere.scale.set(1, 1, 1);
-    (this.chargeSphere.material as THREE.MeshBasicMaterial).opacity = 0;
-  }
-
-  private createShockwave(pos: THREE.Vector3) {
-    const shockGeo = new THREE.TorusGeometry(2, 0.8, 16, 48);
-    const shockMat = new THREE.MeshBasicMaterial({
-      color: 0x00ffff,
-      transparent: true,
-      opacity: 0.85,
-    });
+  private createShockwave(pos: THREE.Vector3, maxScale = 36) {
+    const shockGeo = new THREE.TorusGeometry(2, 0.8, 12, 36);
+    const shockMat = new THREE.MeshBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0.85 });
     const shockMesh = new THREE.Mesh(shockGeo, shockMat);
     shockMesh.position.copy(pos);
     this.scene.add(shockMesh);
 
     let progress = 0;
-    const interval = setInterval(() => {
-      progress += 0.05;
-      shockMesh.scale.set(progress * 40, progress * 40, progress * 40);
+    const id = window.setInterval(() => {
+      progress += 0.06;
+      shockMesh.scale.setScalar(progress * maxScale);
       shockMat.opacity = Math.max(0, 0.85 - progress * 0.9);
       if (progress >= 1.0) {
-        clearInterval(interval);
+        clearInterval(id);
         this.scene.remove(shockMesh);
         shockGeo.dispose();
         shockMat.dispose();
       }
     }, 25);
+    this.activeIntervals.push(id);
   }
 
-  private destroyEnemy(enemy: EnemyShip) {
+  private destroyEnemy(enemy: EnemyEntity) {
     enemy.destroyed = true;
     this.scene.remove(enemy.mesh);
+    if (enemy.linkedBarrier) {
+      enemy.linkedBarrier.visible = false;
+    }
     this.state.score += enemy.points;
     this.state.hits++;
     starFoxAudio.playExplosion();
+    this.createExplosionParticles(enemy.mesh.position, enemy.type === 'boss_core' ? 75 : 40);
 
-    this.createExplosionParticles(enemy.mesh.position);
+    // If Naval Mine destroyed, shockwave damages nearby enemies!
+    if (enemy.type === 'mine') {
+      this.createShockwave(enemy.mesh.position, 18);
+      this.enemies.forEach((other) => {
+        if (!other.destroyed && other.mesh.position.distanceTo(enemy.mesh.position) < 35) {
+          other.health -= 60;
+          if (other.health <= 0) this.destroyEnemy(other);
+        }
+      });
+    }
+
+    // Check if all Dreadnought Boss Cores destroyed!
+    if (enemy.type === 'boss_core') {
+      const aliveCores = this.bossCores.filter((c) => !c.destroyed).length;
+      if (aliveCores === 0 && this.dreadnoughtGroup) {
+        this.state.score += 5000;
+        this.createShockwave(this.dreadnoughtGroup.position, 65);
+        this.createExplosionParticles(this.dreadnoughtGroup.position, 90);
+        this.scene.remove(this.dreadnoughtGroup);
+        this.dreadnoughtGroup = null;
+      }
+    }
     this.notifyState();
   }
 
-  private createExplosionParticles(pos: THREE.Vector3) {
-    const count = 45;
+  private createExplosionParticles(pos: THREE.Vector3, count = 40) {
     const geo = new THREE.BufferGeometry();
     const positions = new Float32Array(count * 3);
     const velocities: THREE.Vector3[] = [];
-
     for (let i = 0; i < count; i++) {
       positions[i * 3 + 0] = pos.x;
       positions[i * 3 + 1] = pos.y;
       positions[i * 3 + 2] = pos.z;
-
       velocities.push(
-        new THREE.Vector3(
-          (Math.random() - 0.5) * 35,
-          (Math.random() - 0.5) * 35,
-          (Math.random() - 0.5) * 35
-        )
+        new THREE.Vector3((Math.random() - 0.5) * 45, (Math.random() - 0.5) * 45, (Math.random() - 0.5) * 45)
       );
     }
-
     geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    const mat = new THREE.PointsMaterial({
-      color: 0xffaa00,
-      size: 1.6,
-      transparent: true,
-      opacity: 1.0,
-    });
-
+    const mat = new THREE.PointsMaterial({ color: 0xffaa00, size: 2.0, transparent: true, opacity: 1.0 });
     const p = new THREE.Points(geo, mat);
     this.scene.add(p);
-    this.explosionParticles.push(p);
 
     let age = 0;
-    const interval = setInterval(() => {
+    const id = window.setInterval(() => {
       age += 0.04;
       const attr = geo.getAttribute('position') as THREE.BufferAttribute;
       const arr = attr.array as Float32Array;
-
       for (let i = 0; i < count; i++) {
         arr[i * 3 + 0] += velocities[i].x * 0.04;
         arr[i * 3 + 1] += velocities[i].y * 0.04;
         arr[i * 3 + 2] += velocities[i].z * 0.04;
       }
       attr.needsUpdate = true;
-      mat.opacity = Math.max(0, 1.0 - age * 1.5);
-
-      if (age >= 0.7) {
-        clearInterval(interval);
+      mat.opacity = Math.max(0, 1.0 - age * 1.45);
+      if (age >= 0.72) {
+        clearInterval(id);
         this.scene.remove(p);
         geo.dispose();
         mat.dispose();
       }
-    }, 40);
+    }, 35);
+    this.activeIntervals.push(id);
   }
 
   // -------------------------------------------------------------
-  // UPDATE TICK
+  // MAIN SIMULATION TICK
   // -------------------------------------------------------------
   public update(dt: number) {
     if (this.state.isGameOver) return;
+    this.totalTime += dt;
 
     // 1. Boost & Brake Mechanics
     let speedMult = 1.0;
     if (this.isBoosting && !this.state.isOverheated) {
-      speedMult = 1.9;
-      this.state.boostHeat = Math.min(1.0, this.state.boostHeat + dt * 0.28);
-      if (this.state.boostHeat >= 1.0) {
-        this.state.isOverheated = true;
-      }
+      speedMult = 1.85;
+      this.state.boostHeat = Math.min(1.0, this.state.boostHeat + dt * 0.25);
+      if (this.state.boostHeat >= 1.0) this.state.isOverheated = true;
     } else {
-      this.state.boostHeat = Math.max(0, this.state.boostHeat - dt * 0.22);
-      if (this.state.boostHeat <= 0.2) {
-        this.state.isOverheated = false;
-      }
+      this.state.boostHeat = Math.max(0, this.state.boostHeat - dt * 0.24);
+      if (this.state.boostHeat <= 0.2) this.state.isOverheated = false;
     }
-
-    if (this.isBraking) {
-      speedMult = 0.45;
-    }
+    if (this.isBraking) speedMult = 0.48;
 
     this.currentSpeed = this.baseSpeed * speedMult;
     this.state.speed = Math.round(this.currentSpeed);
-
     starFoxAudio.setThrusterIntensity(speedMult, this.isBoosting && !this.state.isOverheated);
 
-    // 2. Rail Curve Progress
+    // 2. Spline Progress & Zone Naming
     this.currentDistance += this.currentSpeed * dt;
     const progressU = Math.min(1.0, this.currentDistance / this.totalDistance);
     this.state.progressPercent = Math.round(progressU * 100);
 
-    if (progressU >= 0.99 && !this.state.isMissionComplete) {
+    if (progressU < 0.16) this.state.zoneName = 'CORNERIA OUTER BAY';
+    else if (progressU < 0.42) this.state.zoneName = 'WHISPERING FOREST & LAKE';
+    else if (progressU < 0.70) this.state.zoneName = 'DRAGON CREST ALPINE PASS';
+    else this.state.zoneName = 'DREADNOUGHT SHOWDOWN';
+
+    if (progressU >= 0.992 && !this.state.isMissionComplete) {
       this.state.isMissionComplete = true;
       this.notifyState();
     }
 
-    // Spline Rail coordinate frame
+    // Spline Coordinate Frame + Curvature Auto-Bank!
     const railPos = this.splineCurve.getPointAt(progressU);
-    const railTangent = this.splineCurve.getTangentAt(progressU).normalize();
-    const railForward = railTangent.clone().normalize();
+    const railForward = this.splineCurve.getTangentAt(progressU).normalize();
     const upRef = new THREE.Vector3(0, 1, 0);
-
-    // Screen Right vector: cross(forward, up)
     const railRight = new THREE.Vector3().crossVectors(railForward, upRef).normalize();
-    // Screen Up vector: cross(right, forward)
     const railUp = new THREE.Vector3().crossVectors(railRight, railForward).normalize();
 
-    // 3. Agile Kinematics Steering:
-    // inputYawRoll > 0 (right) moves +railRight (Screen Right)!
-    // inputYawRoll < 0 (left) moves -railRight (Screen Left)!
-    // inputPitch > 0 (up) moves +railUp (Screen Up)!
-    // inputPitch < 0 (down) moves -railUp (Screen Down)!
-    const lateralSpeed = 62.0; // Highly responsive & agile!
-    const verticalSpeed = 50.0;
+    // Calculate curve turn rate so the horizon tilts into sweeping canyon turns
+    const turnDelta = railForward.clone().sub(this.prevTangent);
+    const turnSide = turnDelta.dot(railRight) / Math.max(0.005, dt);
+    this.prevTangent.copy(railForward);
+    const targetSplineBank = THREE.MathUtils.clamp(-turnSide * 0.55, -0.32, 0.32);
+    this.currentSplineBank = THREE.MathUtils.lerp(this.currentSplineBank, targetSplineBank, dt * 3.0);
 
-    this.shipLocalPos.x += this.inputYawRoll * lateralSpeed * dt;
-    this.shipLocalPos.y += this.inputPitch * verticalSpeed * dt;
+    // 3. Agile Arcade Flight Steering (Zero forced center snap-back!)
+    const maxLatSpeed = 88.0;
+    const maxVertSpeed = 70.0;
+    const targetVelX = this.inputYawRoll * maxLatSpeed;
+    const targetVelY = this.inputPitch * maxVertSpeed;
 
-    // Screen Bounding Box: minX: -32, maxX: 32, minY: 3.5, maxY: 35
-    this.shipLocalPos.x = THREE.MathUtils.clamp(this.shipLocalPos.x, -32, 32);
-    this.shipLocalPos.y = THREE.MathUtils.clamp(this.shipLocalPos.y, 3.5, 35);
+    this.shipVelX = THREE.MathUtils.lerp(this.shipVelX, targetVelX, dt * 15.0);
+    this.shipVelY = THREE.MathUtils.lerp(this.shipVelY, targetVelY, dt * 15.0);
 
-    if (this.inputYawRoll === 0) {
-      this.shipLocalPos.x = THREE.MathUtils.lerp(this.shipLocalPos.x, 0, dt * 2.0);
-    }
+    this.shipLocalPos.x += this.shipVelX * dt;
+    this.shipLocalPos.y += this.shipVelY * dt;
 
-    // World position of the ship along rail coordinate system
+    // Generous maneuvering arena relative to spline center
+    this.shipLocalPos.x = THREE.MathUtils.clamp(this.shipLocalPos.x, -48, 48);
+    this.shipLocalPos.y = THREE.MathUtils.clamp(this.shipLocalPos.y, -16, 42);
+
     const worldShipPos = railPos
       .clone()
-      .add(railRight.clone().multiplyScalar(this.shipLocalPos.x))
-      .add(railUp.clone().multiplyScalar(this.shipLocalPos.y));
+      .addScaledVector(railRight, this.shipLocalPos.x)
+      .addScaledVector(railUp, this.shipLocalPos.y);
+
+    // Dynamic Terrain & Ocean Floor Protection: Never clip under Hyrule hills or ocean waves!
+    let minWorldY = TerrainManager.WATER_LEVEL + 3.0;
+    if (Math.abs(worldShipPos.x) < 395 && Math.abs(worldShipPos.z) < 395) {
+      const groundH = TerrainManager.getTerrainHeight(worldShipPos.x, worldShipPos.z);
+      minWorldY = Math.max(minWorldY, groundH + 3.5);
+    }
+    if (worldShipPos.y < minWorldY) {
+      const pushUp = minWorldY - worldShipPos.y;
+      worldShipPos.y = minWorldY;
+      this.shipLocalPos.y += pushUp;
+    }
 
     this.shipGroup.position.copy(worldShipPos);
 
-    // Unified Right-Handed Basis:
-    // Local +X = railRight (Screen Right)
-    // Local +Y = railUp (Screen Up)
-    // Local -Z = railForward (Flight Forward)
-    // Local +Z = -railForward (Towards Camera)
+    // Unified Right-Handed Frame: Local +X Right, Local +Y Up, Local -Z Forward
     const basis = new THREE.Matrix4().makeBasis(railRight, railUp, railForward.clone().negate());
     this.shipGroup.quaternion.setFromRotationMatrix(basis);
 
-    // 4. Banking & Barrel Roll (100% Correct Direction):
-    // Steer Right (inputYawRoll > 0) -> targetRoll = -inputYawRoll * 55 deg (right wing down, left wing up)!
-    // Steer Left (inputYawRoll < 0) -> targetRoll = -inputYawRoll * 55 deg (left wing down, right wing up)!
-    // Pull Up (inputPitch > 0) -> targetPitch = inputPitch * 25 deg (nose up)!
-    // Dive Down (inputPitch < 0) -> targetPitch = inputPitch * 25 deg (nose down)!
-    let targetRoll = -this.inputYawRoll * THREE.MathUtils.degToRad(55.0);
-    let targetPitch = this.inputPitch * THREE.MathUtils.degToRad(25.0);
+    // 4. Crisp Nose Yaw/Pitch Aiming + Deep 62° Banking + Barrel Roll
+    const targetYaw = -this.inputYawRoll * THREE.MathUtils.degToRad(24.0);
+    const targetPitch = this.inputPitch * THREE.MathUtils.degToRad(26.0);
+    const targetRoll = -this.inputYawRoll * THREE.MathUtils.degToRad(62.0) + this.currentSplineBank * 0.5;
+
+    this.smoothedYaw = THREE.MathUtils.lerp(this.smoothedYaw, targetYaw, dt * 14.0);
+    this.smoothedPitch = THREE.MathUtils.lerp(this.smoothedPitch, targetPitch, dt * 14.0);
 
     if (this.isBarrelRolling) {
       this.barrelRollTimer -= dt;
-      const rollProgress = 1.0 - this.barrelRollTimer / 0.55;
-      const spinAngle = rollProgress * Math.PI * 2 * (this.barrelRollDirection === 'left' ? 1 : -1);
-      this.shipMesh.rotation.z = spinAngle;
-
-      if (this.barrelRollTimer <= 0) {
-        this.isBarrelRolling = false;
-      }
+      const rollProgress = 1.0 - this.barrelRollTimer / 0.52;
+      this.smoothedRoll = rollProgress * Math.PI * 2 * (this.barrelRollDirection === 'left' ? 1 : -1);
+      if (this.barrelRollTimer <= 0) this.isBarrelRolling = false;
     } else {
-      this.shipMesh.rotation.z = THREE.MathUtils.lerp(this.shipMesh.rotation.z, targetRoll, dt * 10.0);
-    }
-    this.shipMesh.rotation.x = THREE.MathUtils.lerp(this.shipMesh.rotation.x, targetPitch, dt * 10.0);
-
-    if (this.barrelRollCooldown > 0) {
-      this.barrelRollCooldown -= dt;
+      this.smoothedRoll = THREE.MathUtils.lerp(this.smoothedRoll, targetRoll, dt * 13.0);
     }
 
-    // 5. Airbrake Flaps Deployment & Thruster Flames
-    const flapTargetAngle = this.isBraking ? THREE.MathUtils.degToRad(38.0) : 0;
-    this.leftFlap.rotation.x = THREE.MathUtils.lerp(this.leftFlap.rotation.x, flapTargetAngle, dt * 12.0);
-    this.rightFlap.rotation.x = THREE.MathUtils.lerp(this.rightFlap.rotation.x, flapTargetAngle, dt * 12.0);
+    this.shipMesh.rotation.order = 'YXZ';
+    this.shipMesh.rotation.set(this.smoothedPitch, this.smoothedYaw, this.smoothedRoll);
 
-    const flameScale = this.isBoosting && !this.state.isOverheated ? 2.6 : this.isBraking ? 0.35 : 1.0;
-    this.thrusterFlames.forEach((flame) => {
-      flame.scale.set(1.0, 1.0 + Math.random() * 0.15, flameScale);
-    });
+    if (this.barrelRollCooldown > 0) this.barrelRollCooldown -= dt;
 
-    // 6. Charge Shot Accumulation
+    // 5. Flaps & Flame Effects
+    const flapAngle = this.isBraking ? THREE.MathUtils.degToRad(40.0) : 0;
+    this.leftFlap.rotation.x = THREE.MathUtils.lerp(this.leftFlap.rotation.x, flapAngle, dt * 12.0);
+    this.rightFlap.rotation.x = THREE.MathUtils.lerp(this.rightFlap.rotation.x, flapAngle, dt * 12.0);
+
+    const flameScale = this.isBoosting && !this.state.isOverheated ? 2.8 : this.isBraking ? 0.35 : 1.05;
+    this.thrusterFlames.forEach((f) => f.scale.set(1.0, 1.0 + Math.random() * 0.18, flameScale));
+
+    // 6. Rapid Fire + Auto-Fire + Charge Shot
+    if (this.fireCooldown > 0) this.fireCooldown -= dt;
+    if (this.isFiring || this.autoFire) {
+      this.fireWeapon(true);
+    }
+
     if (this.isFiring) {
       this.chargeTime = Math.min(this.MAX_CHARGE_TIME, this.chargeTime + dt);
-      const chargeRatio = this.chargeTime / this.MAX_CHARGE_TIME;
-      const s = 0.5 + chargeRatio * 2.2;
+      const ratio = this.chargeTime / this.MAX_CHARGE_TIME;
+      const s = 0.5 + ratio * 2.2;
       this.chargeSphere.scale.set(s, s, s);
-      (this.chargeSphere.material as THREE.MeshBasicMaterial).opacity = chargeRatio * 0.85;
-      starFoxAudio.playChargeHum(chargeRatio);
-    } else if (this.chargeTime >= 0.7) {
+      (this.chargeSphere.material as THREE.MeshBasicMaterial).opacity = ratio * 0.85;
+      if (ratio > 0.25) starFoxAudio.playChargeHum(ratio);
+    } else if (this.chargeTime >= 0.72) {
       this.releaseChargeShot();
       this.chargeTime = 0;
     } else {
@@ -1555,50 +1650,81 @@ export class StarFoxEngine {
       (this.chargeSphere.material as THREE.MeshBasicMaterial).opacity = 0;
     }
 
-    // 7. Chase Camera with Dynamic Bank Tilt & Speed FOV
-    const defaultCamDist = 14.5;
+    // 7. Chase Camera with Dynamic Bank Horizon + FOV Kicks
+    const defaultCamDist = 14.0;
     const defaultCamHeight = 4.2;
     const targetCamPos = worldShipPos
       .clone()
       .sub(railForward.clone().multiplyScalar(defaultCamDist))
       .add(railUp.clone().multiplyScalar(defaultCamHeight))
-      .add(railRight.clone().multiplyScalar(this.shipLocalPos.x * 0.22));
+      .add(railRight.clone().multiplyScalar(-this.inputYawRoll * 2.2));
 
-    this.camera.position.lerp(targetCamPos, dt * 11.0);
-
-    const camLookTarget = worldShipPos.clone().add(railForward.clone().multiplyScalar(55));
+    this.camera.position.lerp(targetCamPos, dt * 13.0);
+    const camLookTarget = worldShipPos
+      .clone()
+      .addScaledVector(railForward, 52)
+      .addScaledVector(railRight, this.inputYawRoll * 6.5)
+      .addScaledVector(railUp, this.inputPitch * 5.0);
     this.camera.lookAt(camLookTarget);
 
-    // Dynamic camera roll for visceral flight feel
-    this.camera.rotation.z += this.shipMesh.rotation.z * 0.18;
+    this.smoothedCamRoll = THREE.MathUtils.lerp(
+      this.smoothedCamRoll,
+      this.currentSplineBank + (this.isBarrelRolling ? 0 : this.smoothedRoll * 0.22),
+      dt * 8.0
+    );
+    this.camera.rotation.z += this.smoothedCamRoll;
 
-    const targetFov = this.isBoosting && !this.state.isOverheated ? 82.0 : this.isBraking ? 60.0 : 68.0;
+    const targetFov = this.isBoosting && !this.state.isOverheated ? 84.0 : this.isBraking ? 60.0 : 70.0;
     this.camera.fov = THREE.MathUtils.lerp(this.camera.fov, targetFov, dt * 6.0);
     this.camera.updateProjectionMatrix();
 
     if (this.cameraShakeIntensity > 0) {
       this.camera.position.x += (Math.random() - 0.5) * this.cameraShakeIntensity * 2;
       this.camera.position.y += (Math.random() - 0.5) * this.cameraShakeIntensity * 2;
-      this.cameraShakeIntensity = Math.max(0, this.cameraShakeIntensity - dt * 1.5);
+      this.cameraShakeIntensity = Math.max(0, this.cameraShakeIntensity - dt * 1.6);
     }
 
-    // 8. 3D Wingtip Contrails Update
-    const leftTipLocal = new THREE.Vector3(-4.8, 0.4, 1.8);
-    const rightTipLocal = new THREE.Vector3(4.8, 0.4, 1.8);
-    const leftTipWorld = leftTipLocal.applyMatrix4(this.shipMesh.matrixWorld);
-    const rightTipWorld = rightTipLocal.applyMatrix4(this.shipMesh.matrixWorld);
+    // 8. Project Live 3D Reticles (Near + Far) onto Screen %
+    const shipWorldQuat = new THREE.Quaternion();
+    this.shipMesh.getWorldQuaternion(shipWorldQuat);
+    const { aimDir, lockedEnemy } = this.getShipAimDirection(shipWorldQuat, worldShipPos);
 
-    this.wingtipPointsLeft.unshift(leftTipWorld.clone());
-    this.wingtipPointsRight.unshift(rightTipWorld.clone());
+    const projectToScreen = (pt: THREE.Vector3) => {
+      const p = pt.clone().project(this.camera);
+      return {
+        x: THREE.MathUtils.clamp((p.x + 1) * 50, 8, 92),
+        y: THREE.MathUtils.clamp((1 - p.y) * 50, 10, 90),
+      };
+    };
+    this.state.reticleNear = projectToScreen(worldShipPos.clone().addScaledVector(aimDir, 38));
+    this.state.reticleFar = projectToScreen(worldShipPos.clone().addScaledVector(aimDir, 105));
+    this.state.isTargetLocked = !!lockedEnemy;
+
+    // 9. Update AI Wingmen Formation
+    this.wingmen.forEach((w) => {
+      const wTarget = railPos
+        .clone()
+        .addScaledVector(railRight, w.offset.x + Math.sin(this.totalTime * 1.4 + w.phase) * 4)
+        .addScaledVector(railUp, w.offset.y + Math.cos(this.totalTime * 1.7 + w.phase) * 2.5)
+        .addScaledVector(railForward, -w.offset.z);
+      w.group.position.lerp(wTarget, dt * 6.0);
+      w.group.quaternion.setFromRotationMatrix(basis);
+    });
+
+    // 10. Wingtip Ribbon Contrails
+    this.shipMesh.updateMatrixWorld();
+    const leftTip = new THREE.Vector3(-5.0, 0.45, 1.9).applyMatrix4(this.shipMesh.matrixWorld);
+    const rightTip = new THREE.Vector3(5.0, 0.45, 1.9).applyMatrix4(this.shipMesh.matrixWorld);
+    this.wingtipPointsLeft.unshift(leftTip);
+    this.wingtipPointsRight.unshift(rightTip);
     if (this.wingtipPointsLeft.length > this.TRAIL_LENGTH) this.wingtipPointsLeft.pop();
     if (this.wingtipPointsRight.length > this.TRAIL_LENGTH) this.wingtipPointsRight.pop();
 
     const leftArr = (this.wingtipTrailGeoLeft.attributes.position as THREE.BufferAttribute).array as Float32Array;
     const rightArr = (this.wingtipTrailGeoRight.attributes.position as THREE.BufferAttribute).array as Float32Array;
-
     for (let i = 0; i < this.TRAIL_LENGTH; i++) {
-      const pL = this.wingtipPointsLeft[i] || leftTipWorld;
-      const pR = this.wingtipPointsRight[i] || rightTipWorld;
+      const pL = this.wingtipPointsLeft[i] || leftTip;
+      const pR = this.wingtipPointsRight[i] || rightTip;
       leftArr[i * 3 + 0] = pL.x;
       leftArr[i * 3 + 1] = pL.y;
       leftArr[i * 3 + 2] = pL.z;
@@ -1609,29 +1735,43 @@ export class StarFoxEngine {
     this.wingtipTrailGeoLeft.attributes.position.needsUpdate = true;
     this.wingtipTrailGeoRight.attributes.position.needsUpdate = true;
 
-    // 9. Low-Altitude Water Spray
-    if (worldShipPos.y <= 8.0) {
-      this.waterSprayParticles.visible = true;
-      this.waterSprayParticles.position.set(worldShipPos.x, 0.4, worldShipPos.z);
-    } else {
-      this.waterSprayParticles.visible = false;
+    // 11. Zelda World Animations (Water waves, Grass wind, Snow over peaks, Lighting, Building windmills!)
+    this.terrainManager.updateTime(this.totalTime);
+    this.waterManager.update(this.totalTime, dt);
+    this.skyLighting.update(dt, worldShipPos);
+    if (this.outerOceanMaterial) {
+      this.outerOceanMaterial.uniforms.uTime.value = this.totalTime;
+    }
+
+    // Trigger snow mist only when over Hyrule snow peaks so bay air stays clear
+    const overSnow =
+      Math.abs(worldShipPos.x) < 395 &&
+      Math.abs(worldShipPos.z) < 395 &&
+      TerrainManager.isSnowAt(worldShipPos.x, worldShipPos.z);
+    const foliageTrackPos = worldShipPos.clone();
+    if (!overSnow) foliageTrackPos.y = 5.0;
+    this.foliageManager.update(this.totalTime, dt, foliageTrackPos, this.skyLighting.dirLight?.position);
+    this.buildingSystem.update(dt);
+
+    // Low-altitude Water Spray over Ocean/Lake
+    const nearWater = worldShipPos.y <= TerrainManager.WATER_LEVEL + 9.0 &&
+      (Math.abs(worldShipPos.x) > 395 || Math.abs(worldShipPos.z) > 395 ||
+        TerrainManager.getTerrainHeight(worldShipPos.x, worldShipPos.z) < TerrainManager.WATER_LEVEL + 0.5);
+    this.waterSprayParticles.visible = nearWater;
+    if (nearWater) {
+      this.waterSprayParticles.position.set(worldShipPos.x, TerrainManager.WATER_LEVEL + 0.4, worldShipPos.z);
     }
 
     if (this.speedLinesMesh) {
-      (this.speedLinesMesh.material as THREE.LineBasicMaterial).opacity = this.isBoosting ? 0.75 : 0.25;
-      this.speedLinesMesh.rotation.z += dt * (this.isBoosting ? 2.5 : 0.6);
+      (this.speedLinesMesh.material as THREE.LineBasicMaterial).opacity = this.isBoosting ? 0.72 : 0.22;
+      this.speedLinesMesh.rotation.z += dt * (this.isBoosting ? 2.6 : 0.7);
     }
 
-    // 10. Water Ocean Shader Animation
-    if (this.oceanMaterial) {
-      this.oceanMaterial.uniforms.time.value += dt;
-    }
-
-    // 11. Shield Bubble State (Disappears unless active!)
+    // 12. Shield Bubble Visibility (Strictly vanishes after timeout!)
     if (this.shieldActiveTimer > 0) {
       this.shieldActiveTimer -= dt;
       this.shieldBubble.visible = true;
-      this.shieldBubble.rotation.y += dt * 3.0;
+      this.shieldBubble.rotation.y += dt * 3.5;
       (this.shieldBubble.material as THREE.MeshBasicMaterial).opacity = Math.min(0.85, this.shieldActiveTimer * 2.0);
       this.state.shieldActive = true;
     } else {
@@ -1639,9 +1779,9 @@ export class StarFoxEngine {
       this.state.shieldActive = false;
     }
 
-    // 12. Arches & Rings Collision Check
+    // 13. Arches, Shield Rings & Weapon Upgrade Pods Collection
     this.archesAndRings.forEach((ring) => {
-      if (!ring.collected && ring.position.distanceTo(worldShipPos) < ring.radius + 3.0) {
+      if (!ring.collected && ring.position.distanceTo(worldShipPos) < ring.radius + 4.5) {
         ring.collected = true;
         ring.mesh.visible = false;
         starFoxAudio.playRingCollect();
@@ -1649,11 +1789,14 @@ export class StarFoxEngine {
         if (ring.type === 'boost_arch') {
           this.state.score += 1000;
           this.state.boostHeat = 0;
+          this.state.isOverheated = false;
         } else if (ring.type === 'shield_ring') {
-          // Activates shield bubble for 4 seconds!
-          this.state.shield = Math.min(this.state.maxShield, this.state.shield + 30);
+          this.state.shield = Math.min(this.state.maxShield, this.state.shield + 35);
           this.shieldActiveTimer = 4.0;
-          this.state.score += 350;
+          this.state.score += 400;
+        } else if (ring.type === 'weapon_pod') {
+          this.state.weaponLevel = Math.min(3, this.state.weaponLevel + 1) as 1 | 2 | 3;
+          this.state.score += 800;
         } else {
           this.state.score += 500;
         }
@@ -1661,27 +1804,51 @@ export class StarFoxEngine {
       }
     });
 
-    // 13. Enemy Behaviors & Fire
+    // 14. Dynamic Enemy Movement, Targeting & Firing + Boss Health Bar
+    let activeBossHp = 0;
+    let maxBossHp = 0;
+    this.bossCores.forEach((c) => {
+      maxBossHp += c.maxHealth;
+      if (!c.destroyed) activeBossHp += c.health;
+    });
+    if (progressU >= 0.70 && this.dreadnoughtGroup && maxBossHp > 0) {
+      this.state.bossHealth = Math.round((activeBossHp / maxBossHp) * 100);
+    } else {
+      this.state.bossHealth = null;
+    }
+
     this.enemies.forEach((enemy) => {
       if (enemy.destroyed) return;
 
-      if (enemy.type === 'crystal') {
-        enemy.mesh.rotation.y += dt * 1.5;
+      if (enemy.type === 'crystal' || enemy.type === 'mine' || enemy.type === 'gate_core' || enemy.type === 'boss_core') {
+        enemy.mesh.rotation.y += dt * 1.8;
+      }
+
+      // Sine-wave attack weaving for aerial drones & corvettes
+      if (enemy.moveAmpX > 0 || enemy.moveAmpY > 0) {
+        const oscX = Math.sin(this.totalTime * 1.6 + enemy.movePhase) * enemy.moveAmpX;
+        const oscY = Math.cos(this.totalTime * 1.2 + enemy.movePhase) * enemy.moveAmpY;
+        enemy.mesh.position.set(enemy.basePos.x + oscX, enemy.basePos.y + oscY, enemy.basePos.z);
+      }
+
+      // Collision check with Laser Barrier if still intact!
+      if (enemy.type === 'gate_core' && enemy.mesh.position.distanceTo(worldShipPos) < 12) {
+        this.takePlayerDamage(18);
+        this.destroyEnemy(enemy);
         return;
       }
 
       const distToPlayer = enemy.mesh.position.distanceTo(worldShipPos);
-
-      if (distToPlayer < 360 && enemy.mesh.position.z < worldShipPos.z) {
+      if (distToPlayer < 380 && distToPlayer > 25 && enemy.fireCooldown < 500) {
         enemy.fireCooldown -= dt;
         if (enemy.fireCooldown <= 0) {
-          enemy.fireCooldown = enemy.type === 'drone' ? 1.6 : 2.4;
+          enemy.fireCooldown = enemy.type === 'drone' ? 1.8 : enemy.type === 'guardian' ? 2.2 : 1.5;
           this.spawnHostileLaser(enemy.mesh.position, worldShipPos);
         }
       }
     });
 
-    // 14. Projectiles Update & Collisions
+    // 15. Projectiles Update & Hit Detection
     for (let i = this.projectiles.length - 1; i >= 0; i--) {
       const p = this.projectiles[i];
       p.lifetime -= dt;
@@ -1689,7 +1856,7 @@ export class StarFoxEngine {
 
       if (p.isPlayer) {
         for (const enemy of this.enemies) {
-          if (!enemy.destroyed && p.position.distanceTo(enemy.mesh.position) < (p.isChargeShot ? 14 : 4.5)) {
+          if (!enemy.destroyed && p.position.distanceTo(enemy.mesh.position) < (p.isChargeShot ? 16 : enemy.hitRadius)) {
             enemy.health -= p.damage;
             p.lifetime = 0;
             if (enemy.health <= 0) {
@@ -1699,14 +1866,13 @@ export class StarFoxEngine {
           }
         }
       } else {
-        if (p.position.distanceTo(worldShipPos) < 3.8) {
+        if (p.position.distanceTo(worldShipPos) < 4.2) {
           p.lifetime = 0;
           if (this.isBarrelRolling) {
             starFoxAudio.playBarrelRoll();
           } else if (this.shieldActiveTimer > 0) {
-            // Shield absorbed!
             starFoxAudio.playHit();
-            this.cameraShakeIntensity = 0.15;
+            this.cameraShakeIntensity = 0.16;
           } else {
             this.takePlayerDamage(p.damage);
           }
@@ -1719,16 +1885,30 @@ export class StarFoxEngine {
       }
     }
 
-    // 15. Radio Dialogue Triggers
-    this.checkRadioDialogue();
+    // 16. Dialogue Triggers
+    for (const d of this.dialogueEvents) {
+      if (!d.triggered && progressU >= d.u) {
+        d.triggered = true;
+        this.state.dialogue = { speaker: d.speaker, text: d.text, visible: true };
+        starFoxAudio.playRadioBeep();
+        this.notifyState();
+        const tid = window.setTimeout(() => {
+          if (this.state.dialogue?.text === d.text) {
+            this.state.dialogue = null;
+            this.notifyState();
+          }
+        }, d.duration * 1000);
+        this.activeIntervals.push(tid);
+        break;
+      }
+    }
   }
 
   private spawnHostileLaser(from: THREE.Vector3, to: THREE.Vector3) {
-    const laserGeo = new THREE.CapsuleGeometry(0.25, 2.2, 6, 8);
-    laserGeo.rotateX(Math.PI / 2);
-    const laserMat = new THREE.MeshBasicMaterial({ color: 0xff0055 });
-    const laserMesh = new THREE.Mesh(laserGeo, laserMat);
-
+    const laserMesh = new THREE.Mesh(
+      new THREE.CapsuleGeometry(0.28, 2.5, 4, 8).rotateX(Math.PI / 2),
+      new THREE.MeshBasicMaterial({ color: 0xff0055 })
+    );
     laserMesh.position.copy(from);
     const dir = new THREE.Vector3().subVectors(to, from).normalize();
     laserMesh.lookAt(to);
@@ -1737,10 +1917,10 @@ export class StarFoxEngine {
     this.projectiles.push({
       mesh: laserMesh,
       position: laserMesh.position,
-      velocity: dir.multiplyScalar(150),
+      velocity: dir.multiplyScalar(155),
       isPlayer: false,
-      damage: 15,
-      lifetime: 3.5,
+      damage: 14,
+      lifetime: 3.4,
     });
   }
 
@@ -1749,39 +1929,14 @@ export class StarFoxEngine {
     this.state.shield = Math.max(0, this.state.shield - damage);
     this.cameraShakeIntensity = 0.35;
     starFoxAudio.playHit();
-
-    // Brief flash of shield on damage
-    this.shieldActiveTimer = 0.6;
+    this.shieldActiveTimer = 0.65;
 
     if (this.state.shield <= 0) {
       this.state.isGameOver = true;
-      this.createExplosionParticles(this.shipGroup.position);
+      this.createExplosionParticles(this.shipGroup.position, 70);
       starFoxAudio.playExplosion();
     }
     this.notifyState();
-  }
-
-  private checkRadioDialogue() {
-    for (const d of this.dialogueEvents) {
-      if (!d.triggered && this.currentDistance >= d.dist) {
-        d.triggered = true;
-        this.state.dialogue = {
-          speaker: d.speaker,
-          text: d.text,
-          visible: true,
-        };
-        starFoxAudio.playRadioBeep();
-        this.notifyState();
-
-        setTimeout(() => {
-          if (this.state.dialogue?.text === d.text) {
-            this.state.dialogue = null;
-            this.notifyState();
-          }
-        }, d.duration * 1000);
-        break;
-      }
-    }
   }
 
   private notifyState() {
@@ -1791,7 +1946,7 @@ export class StarFoxEngine {
   }
 
   // -------------------------------------------------------------
-  // RENDER & RUN LOOP
+  // RENDER & LIFECYCLE
   // -------------------------------------------------------------
   public start() {
     if (this.isRunning) return;
@@ -1803,10 +1958,17 @@ export class StarFoxEngine {
 
     const loop = () => {
       if (!this.isRunning) return;
-      const dt = Math.min(0.1, this.clock.getDelta());
+      const dt = Math.min(0.08, this.clock.getDelta());
       this.update(dt);
-      this.composer.render();
-      this.notifyState();
+      if (this.composer) {
+        this.composer.render();
+      } else {
+        this.renderer.render(this.scene, this.camera);
+      }
+      if (this.totalTime - this.lastNotifyTime > 0.033) {
+        this.lastNotifyTime = this.totalTime;
+        this.notifyState();
+      }
       this.animationFrameId = requestAnimationFrame(loop);
     };
 
@@ -1823,16 +1985,20 @@ export class StarFoxEngine {
   }
 
   public resize(width: number, height: number) {
-    if (!this.camera || !this.renderer || !this.composer) return;
-    this.camera.aspect = width / height;
+    if (!this.camera || !this.renderer) return;
+    const w = Math.max(width, 100);
+    const h = Math.max(height, 100);
+    this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
-    this.renderer.setSize(width, height);
-    this.composer.setSize(width, height);
+    this.renderer.setSize(w, h);
+    if (this.composer) this.composer.setSize(w, h);
   }
 
   public restart() {
     this.currentDistance = 0;
-    this.shipLocalPos.set(0, 16, 0);
+    this.shipLocalPos.set(0, 18, 0);
+    this.shipVelX = 0;
+    this.shipVelY = 0;
     this.shieldActiveTimer = 0;
     this.state = {
       shield: 100,
@@ -1842,8 +2008,14 @@ export class StarFoxEngine {
       smartBombs: 3,
       score: 0,
       hits: 0,
-      speed: 105,
+      speed: 108,
       progressPercent: 0,
+      weaponLevel: 1,
+      zoneName: 'CORNERIA OUTER BAY',
+      bossHealth: null,
+      reticleNear: { x: 50, y: 50 },
+      reticleFar: { x: 50, y: 50 },
+      isTargetLocked: false,
       dialogue: null,
       isMissionComplete: false,
       isGameOver: false,
@@ -1858,12 +2030,20 @@ export class StarFoxEngine {
       e.destroyed = false;
       e.health = e.maxHealth;
       if (!e.mesh.parent) this.scene.add(e.mesh);
+      if (e.linkedBarrier) e.linkedBarrier.visible = true;
     });
+    if (this.dreadnoughtGroup && !this.dreadnoughtGroup.parent) {
+      this.scene.add(this.dreadnoughtGroup);
+    }
     this.notifyState();
   }
 
   public dispose() {
     this.stop();
+    this.activeIntervals.forEach((id) => {
+      clearInterval(id);
+      clearTimeout(id);
+    });
     starFoxAudio.dispose();
     this.renderer.dispose();
   }

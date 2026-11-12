@@ -326,7 +326,7 @@ export class BuildingSystem {
   /**
    * Build realistic 3D structure models (AAA Fantasy aesthetics)
    */
-  private createStructureMesh(type: string, isHologram: boolean): THREE.Group {
+  public createStructureMesh(type: string, isHologram: boolean): THREE.Group {
     if (type.startsWith('road_')) {
       return this.createCustomRoadMesh(type, isHologram);
     }
