@@ -18,6 +18,9 @@ import {
   Compass,
   Zap,
   AlertTriangle,
+  Lock,
+  Unlock,
+  X,
 } from 'lucide-react';
 
 interface StarFoxGameProps {
@@ -69,6 +72,8 @@ export const StarFoxGame: React.FC<StarFoxGameProps> = ({ onBackToMenu }) => {
   const [sensorStatus, setSensorStatus] = useState<'idle' | 'checking' | 'active' | 'blocked'>('idle');
   const [invertTiltX, setInvertTiltX] = useState(false);
   const [invertTiltY, setInvertTiltY] = useState(false);
+  const [orientationLock, setOrientationLock] = useState<'none' | 'locked' | 'unsupported'>('none');
+  const [showLockTip, setShowLockTip] = useState(false);
 
   const steeringModeRef = useRef<'touch' | 'tilt'>('touch');
   const sensorStatusRef = useRef<'idle' | 'checking' | 'active' | 'blocked'>('idle');
@@ -104,21 +109,82 @@ export const StarFoxGame: React.FC<StarFoxGameProps> = ({ onBackToMenu }) => {
     invertTiltYRef.current = invertTiltY;
   }, [invertTiltY]);
 
-  const toggleFullscreen = () => {
+  const lockScreenOrientation = useCallback(async (mode: 'current' | 'landscape' | 'portrait' = 'current') => {
+    // Capture current orientation BEFORE requesting fullscreen (so we lock what the user is holding)
+    const orientation = window.screen?.orientation as any;
+    const preType = orientation?.type as string | undefined;
+    const fallbackKind = window.innerWidth >= window.innerHeight ? 'landscape' : 'portrait';
+    const desired =
+      mode === 'landscape' ? 'landscape' : mode === 'portrait' ? 'portrait' : preType || fallbackKind;
+
+    try {
+      if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
+        await document.documentElement.requestFullscreen();
+        setIsFullscreen(true);
+      }
+    } catch {
+      // Fullscreen may be unavailable (e.g. iPhone Safari); still attempt lock below
+    }
+
+    if (!orientation || typeof orientation.lock !== 'function') {
+      setOrientationLock('unsupported');
+      setShowLockTip(true);
+      return false;
+    }
+
+    try {
+      await orientation.lock(desired);
+      setOrientationLock('locked');
+      setShowLockTip(false);
+      return true;
+    } catch {
+      setOrientationLock('unsupported');
+      setShowLockTip(true);
+      return false;
+    }
+  }, []);
+
+  const unlockScreenOrientation = useCallback(() => {
+    try {
+      const orientation = window.screen?.orientation as any;
+      if (orientation && typeof orientation.unlock === 'function') {
+        orientation.unlock();
+      }
+    } catch {
+      // ignore
+    }
+    setOrientationLock('none');
+  }, []);
+
+  const toggleFullscreen = async () => {
     if (!document.fullscreenElement) {
-      document.documentElement.requestFullscreen().catch(() => {});
-      setIsFullscreen(true);
+      if (steeringModeRef.current === 'tilt') {
+        await lockScreenOrientation('current');
+      } else {
+        document.documentElement.requestFullscreen().catch(() => {});
+        setIsFullscreen(true);
+      }
     } else if (document.exitFullscreen) {
+      unlockScreenOrientation();
       document.exitFullscreen().catch(() => {});
       setIsFullscreen(false);
     }
   };
 
   useEffect(() => {
-    const handleFSChange = () => setIsFullscreen(!!document.fullscreenElement);
+    const handleFSChange = () => {
+      const fs = !!document.fullscreenElement;
+      setIsFullscreen(fs);
+      if (!fs) {
+        setOrientationLock('none');
+      }
+    };
     document.addEventListener('fullscreenchange', handleFSChange);
-    return () => document.removeEventListener('fullscreenchange', handleFSChange);
-  }, []);
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFSChange);
+      unlockScreenOrientation();
+    };
+  }, [unlockScreenOrientation]);
 
   useEffect(() => {
     if (engineRef.current) {
@@ -143,6 +209,9 @@ export const StarFoxGame: React.FC<StarFoxGameProps> = ({ onBackToMenu }) => {
       smoothedDelta.current = { roll: 0, pitch: 0 };
       setSensorStatus('checking');
       sensorStatusRef.current = 'checking';
+
+      // Synchronously start fullscreen + orientation lock within direct tap user gesture
+      const lockPromise = lockScreenOrientation('current');
 
       let deniedByPrompt = false;
       // Safely try iOS / privacy browser permission APIs without throwing blocking alerts
@@ -170,6 +239,8 @@ export const StarFoxGame: React.FC<StarFoxGameProps> = ({ onBackToMenu }) => {
         }
       }
 
+      await lockPromise;
+
       setSteeringMode('tilt');
       steeringModeRef.current = 'tilt';
       if (engineRef.current) {
@@ -190,6 +261,8 @@ export const StarFoxGame: React.FC<StarFoxGameProps> = ({ onBackToMenu }) => {
         }
       }, 900);
     } else {
+      unlockScreenOrientation();
+      setShowLockTip(false);
       setSteeringMode('touch');
       steeringModeRef.current = 'touch';
       setSensorStatus('idle');
@@ -242,8 +315,8 @@ export const StarFoxGame: React.FC<StarFoxGameProps> = ({ onBackToMenu }) => {
       smoothedDelta.current.roll += (rawDRoll - smoothedDelta.current.roll) * alpha;
       smoothedDelta.current.pitch += (rawDPitch - smoothedDelta.current.pitch) * alpha;
 
-      const maxTilt = 22.0;
-      const deadzone = 1.8;
+      const maxTilt = 16.0;
+      const deadzone = 1.5;
 
       const shape = (delta: number) => {
         if (Math.abs(delta) < deadzone) return 0;
@@ -725,53 +798,89 @@ export const StarFoxGame: React.FC<StarFoxGameProps> = ({ onBackToMenu }) => {
       )}
 
       {steeringMode === 'tilt' && sensorStatus === 'active' && (
-        <div className="absolute bottom-3 left-1/2 -translate-x-1/2 pointer-events-auto z-30 flex items-center gap-1.5 bg-slate-950/85 backdrop-blur-md p-1.5 rounded-full border border-cyan-500/40 shadow-xl">
-          {/* Live Tilt Horizon Indicator */}
-          <div
-            className="relative w-8 h-8 rounded-full border border-cyan-400/50 bg-slate-900/90 shrink-0 overflow-hidden"
-            title="Live Neigungs-Horizont"
-          >
-            <div className="absolute top-1/2 left-0 right-0 h-[1px] bg-cyan-500/30" />
-            <div className="absolute left-1/2 top-0 bottom-0 w-[1px] bg-cyan-500/30" />
+        <div className="absolute bottom-3 left-1/2 -translate-x-1/2 pointer-events-auto z-30 flex flex-col items-center gap-1.5">
+          {orientationLock === 'unsupported' && showLockTip && (
+            <div className="flex items-center gap-2 bg-amber-950/95 border border-amber-400/60 text-amber-100 text-[10px] sm:text-xs px-3 py-1 rounded-full shadow-lg max-w-[90vw]">
+              <span>
+                Browser erlaubt keine Drehsperre – aktiviere am Handy kurz <strong>Ausrichtungssperre / Drehen aus</strong>.
+              </span>
+              <button
+                onClick={() => setShowLockTip(false)}
+                className="text-amber-300 hover:text-white shrink-0"
+                title="Hinweis schließen"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          )}
+
+          <div className="flex items-center gap-1.5 bg-slate-950/85 backdrop-blur-md p-1.5 rounded-full border border-cyan-500/40 shadow-xl">
+            {/* Live Tilt Horizon Indicator */}
             <div
-              ref={tiltDotRef}
-              className="absolute top-1/2 left-1/2 w-2.5 h-2.5 rounded-full bg-cyan-400 shadow-[0_0_8px_rgba(34,211,238,0.9)]"
-              style={{ transform: 'translate(-50%, -50%)' }}
-            />
+              className="relative w-8 h-8 rounded-full border border-cyan-400/50 bg-slate-900/90 shrink-0 overflow-hidden"
+              title="Live Neigungs-Horizont"
+            >
+              <div className="absolute top-1/2 left-0 right-0 h-[1px] bg-cyan-500/30" />
+              <div className="absolute left-1/2 top-0 bottom-0 w-[1px] bg-cyan-500/30" />
+              <div
+                ref={tiltDotRef}
+                className="absolute top-1/2 left-1/2 w-2.5 h-2.5 rounded-full bg-cyan-400 shadow-[0_0_8px_rgba(34,211,238,0.9)]"
+                style={{ transform: 'translate(-50%, -50%)' }}
+              />
+            </div>
+
+            <button
+              onClick={calibrateTilt}
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-full bg-cyan-600 hover:bg-cyan-500 text-white text-[11px] font-bold active:scale-95 transition"
+              title="Aktuelle Haltung als Nullpunkt setzen"
+            >
+              <Compass className="h-3.5 w-3.5" />
+              <span>Kalibrieren</span>
+            </button>
+
+            <button
+              onClick={() =>
+                orientationLock === 'locked' ? unlockScreenOrientation() : lockScreenOrientation('current')
+              }
+              className={`flex items-center gap-1 px-2 py-1.5 rounded-full text-[10px] font-black border transition active:scale-95 ${
+                orientationLock === 'locked'
+                  ? 'bg-emerald-500 text-slate-950 border-emerald-300'
+                  : 'bg-slate-800/90 text-slate-200 border-slate-700 hover:text-white'
+              }`}
+              title={
+                orientationLock === 'locked'
+                  ? 'Bildschirmausrichtung entsperren'
+                  : 'Bildschirmausrichtung im Vollbild sperren'
+              }
+            >
+              {orientationLock === 'locked' ? <Lock className="h-3 w-3" /> : <Unlock className="h-3 w-3" />}
+              <span className="hidden sm:inline">{orientationLock === 'locked' ? 'Gesperrt' : 'Sperren'}</span>
+            </button>
+
+            <button
+              onClick={() => setInvertTiltX((v) => !v)}
+              className={`px-2 py-1.5 rounded-full text-[10px] font-black border transition active:scale-95 ${
+                invertTiltX
+                  ? 'bg-amber-500 text-slate-950 border-amber-300'
+                  : 'bg-slate-800/90 text-slate-300 border-slate-700 hover:text-white'
+              }`}
+              title="Links/Rechts umkehren"
+            >
+              X ↔
+            </button>
+
+            <button
+              onClick={() => setInvertTiltY((v) => !v)}
+              className={`px-2 py-1.5 rounded-full text-[10px] font-black border transition active:scale-95 ${
+                invertTiltY
+                  ? 'bg-amber-500 text-slate-950 border-amber-300'
+                  : 'bg-slate-800/90 text-slate-300 border-slate-700 hover:text-white'
+              }`}
+              title="Hoch/Runter umkehren"
+            >
+              Y ↕
+            </button>
           </div>
-
-          <button
-            onClick={calibrateTilt}
-            className="flex items-center gap-1 px-2.5 py-1.5 rounded-full bg-cyan-600 hover:bg-cyan-500 text-white text-[11px] font-bold active:scale-95 transition"
-            title="Aktuelle Haltung als Nullpunkt setzen"
-          >
-            <Compass className="h-3.5 w-3.5" />
-            <span>Kalibrieren</span>
-          </button>
-
-          <button
-            onClick={() => setInvertTiltX((v) => !v)}
-            className={`px-2 py-1.5 rounded-full text-[10px] font-black border transition active:scale-95 ${
-              invertTiltX
-                ? 'bg-amber-500 text-slate-950 border-amber-300'
-                : 'bg-slate-800/90 text-slate-300 border-slate-700 hover:text-white'
-            }`}
-            title="Links/Rechts umkehren"
-          >
-            X ↔
-          </button>
-
-          <button
-            onClick={() => setInvertTiltY((v) => !v)}
-            className={`px-2 py-1.5 rounded-full text-[10px] font-black border transition active:scale-95 ${
-              invertTiltY
-                ? 'bg-amber-500 text-slate-950 border-amber-300'
-                : 'bg-slate-800/90 text-slate-300 border-slate-700 hover:text-white'
-            }`}
-            title="Hoch/Runter umkehren"
-          >
-            Y ↕
-          </button>
         </div>
       )}
 
