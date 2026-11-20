@@ -36,6 +36,7 @@ export const StarFoxGame: React.FC<StarFoxGameProps> = ({ onBackToMenu }) => {
   const reticleFarBoxRef = useRef<HTMLDivElement>(null);
   const reticleFarDotRef = useRef<HTMLDivElement>(null);
   const reticleLockLabelRef = useRef<HTMLDivElement>(null);
+  const reticleHitRef = useRef<HTMLDivElement>(null);
   const reticleNearRef = useRef<HTMLDivElement>(null);
   const reticleNearRingRef = useRef<HTMLDivElement>(null);
   const tiltDotRef = useRef<HTMLDivElement>(null);
@@ -62,6 +63,8 @@ export const StarFoxGame: React.FC<StarFoxGameProps> = ({ onBackToMenu }) => {
     isMissionComplete: false,
     isGameOver: false,
     shieldActive: false,
+    combo: 1,
+    lastKillText: null,
   });
 
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -472,7 +475,8 @@ export const StarFoxGame: React.FC<StarFoxGameProps> = ({ onBackToMenu }) => {
     };
 
     let lastLockState = false;
-    engine.onReticleUpdate = (nearX, nearY, farX, farY, locked) => {
+    let lastHitState = false;
+    engine.onReticleUpdate = (nearX, nearY, farX, farY, locked, hitConfirmed) => {
       if (reticleFarRef.current) {
         reticleFarRef.current.style.left = `${farX.toFixed(2)}%`;
         reticleFarRef.current.style.top = `${farY.toFixed(2)}%`;
@@ -481,24 +485,31 @@ export const StarFoxGame: React.FC<StarFoxGameProps> = ({ onBackToMenu }) => {
         reticleNearRef.current.style.left = `${nearX.toFixed(2)}%`;
         reticleNearRef.current.style.top = `${nearY.toFixed(2)}%`;
       }
+      if (hitConfirmed !== lastHitState) {
+        lastHitState = hitConfirmed;
+        if (reticleHitRef.current) {
+          reticleHitRef.current.style.opacity = hitConfirmed ? '1' : '0';
+          reticleHitRef.current.style.transform = hitConfirmed ? 'scale(1.15)' : 'scale(0.75)';
+        }
+      }
       if (locked !== lastLockState) {
         lastLockState = locked;
         if (reticleFarBoxRef.current) {
-          reticleFarBoxRef.current.className = `w-10 h-10 sm:w-12 sm:h-12 border-2 rounded-sm flex items-center justify-center transition-colors ${
-            locked ? 'border-amber-400 scale-110 shadow-[0_0_16px_rgba(251,191,36,0.9)]' : 'border-cyan-400/70'
+          reticleFarBoxRef.current.className = `w-9 h-9 sm:w-11 sm:h-11 border-2 rounded-sm flex items-center justify-center transition-colors ${
+            locked ? 'border-amber-400 scale-110 shadow-[0_0_14px_rgba(251,191,36,0.85)]' : 'border-cyan-400/55'
           }`;
         }
         if (reticleFarDotRef.current) {
           reticleFarDotRef.current.className = `w-1.5 h-1.5 rounded-full ${
-            locked ? 'bg-red-500 animate-ping' : 'bg-cyan-300'
+            locked ? 'bg-red-500 animate-ping' : 'bg-cyan-300/80'
           }`;
         }
         if (reticleLockLabelRef.current) {
           reticleLockLabelRef.current.style.display = locked ? 'block' : 'none';
         }
         if (reticleNearRingRef.current) {
-          reticleNearRingRef.current.className = `w-16 h-16 sm:w-20 sm:h-20 border rounded-full flex items-center justify-center ${
-            locked ? 'border-red-400/80' : 'border-cyan-400/35'
+          reticleNearRingRef.current.className = `w-14 h-14 sm:w-16 sm:h-16 border rounded-full flex items-center justify-center ${
+            locked ? 'border-amber-400/70' : 'border-cyan-400/25'
           }`;
         }
       }
@@ -710,9 +721,16 @@ export const StarFoxGame: React.FC<StarFoxGameProps> = ({ onBackToMenu }) => {
       {/* 3D WebGL Canvas */}
       <canvas ref={canvasRef} className="w-full h-full block cursor-crosshair touch-none" onContextMenu={(e) => e.preventDefault()} />
 
+      {/* Ultra-slim 2px Mission Progress Line at very top edge */}
+      <div className="absolute top-0 left-0 right-0 h-[2px] bg-slate-900/40 pointer-events-none z-30">
+        <div
+          className="h-full bg-gradient-to-r from-cyan-400 via-sky-400 to-emerald-400 transition-all duration-300"
+          style={{ width: `${gameState.progressPercent}%` }}
+        />
+      </div>
+
       {/* ------------------------------------------------------------- */}
-      {/* DYNAMIC 3D PROJECTED TWIN TARGETING RETICLES (60 FPS DOM REF) */}
-      {/* Follows Arwing nose direction & turns Amber/Red on Target Lock */}
+      {/* DYNAMIC 3D PROJECTED TWIN TARGETING RETICLES + HIT-MARKER     */}
       {/* ------------------------------------------------------------- */}
       <div
         ref={reticleFarRef}
@@ -721,9 +739,18 @@ export const StarFoxGame: React.FC<StarFoxGameProps> = ({ onBackToMenu }) => {
       >
         <div
           ref={reticleFarBoxRef}
-          className="w-10 h-10 sm:w-12 sm:h-12 border-2 rounded-sm flex items-center justify-center transition-colors border-cyan-400/70"
+          className="relative w-9 h-9 sm:w-11 sm:h-11 border-2 rounded-sm flex items-center justify-center transition-colors border-cyan-400/55"
         >
-          <div ref={reticleFarDotRef} className="w-1.5 h-1.5 rounded-full bg-cyan-300" />
+          <div ref={reticleFarDotRef} className="w-1.5 h-1.5 rounded-full bg-cyan-300/80" />
+          {/* Instant Hit-Marker X Flash */}
+          <div
+            ref={reticleHitRef}
+            style={{ opacity: 0, transform: 'scale(0.75)' }}
+            className="absolute inset-0 flex items-center justify-center transition-all duration-75"
+          >
+            <div className="absolute w-6 h-[2px] bg-amber-300 rotate-45 shadow-[0_0_8px_#fbbf24]" />
+            <div className="absolute w-6 h-[2px] bg-amber-300 -rotate-45 shadow-[0_0_8px_#fbbf24]" />
+          </div>
         </div>
         <div
           ref={reticleLockLabelRef}
@@ -741,7 +768,7 @@ export const StarFoxGame: React.FC<StarFoxGameProps> = ({ onBackToMenu }) => {
       >
         <div
           ref={reticleNearRingRef}
-          className="w-16 h-16 sm:w-20 sm:h-20 border rounded-full flex items-center justify-center border-cyan-400/35"
+          className="w-14 h-14 sm:w-16 sm:h-16 border rounded-full flex items-center justify-center border-cyan-400/25"
         />
       </div>
 
@@ -753,12 +780,12 @@ export const StarFoxGame: React.FC<StarFoxGameProps> = ({ onBackToMenu }) => {
           className="fixed pointer-events-none z-30 transform -translate-x-1/2 -translate-y-1/2"
           style={{ left: `${joystickOrigin.x}px`, top: `${joystickOrigin.y}px` }}
         >
-          <div className="w-24 h-24 rounded-full border-2 border-cyan-400/55 bg-cyan-950/40 backdrop-blur-sm flex items-center justify-center shadow-lg shadow-cyan-500/20">
-            <div className="absolute w-full h-[1px] bg-cyan-400/30" />
-            <div className="absolute h-full w-[1px] bg-cyan-400/30" />
+          <div className="w-20 h-20 rounded-full border border-cyan-400/45 bg-cyan-950/25 backdrop-blur-xs flex items-center justify-center">
+            <div className="absolute w-full h-[1px] bg-cyan-400/20" />
+            <div className="absolute h-full w-[1px] bg-cyan-400/20" />
           </div>
           <div
-            className="absolute top-1/2 left-1/2 w-11 h-11 rounded-full bg-gradient-to-tr from-cyan-400 to-blue-400 border-2 border-white shadow-xl shadow-cyan-400/60"
+            className="absolute top-1/2 left-1/2 w-9 h-9 rounded-full bg-cyan-400/80 border border-white shadow-lg shadow-cyan-400/50"
             style={{
               transform: `translate(calc(-50% + ${joystickPos.x - joystickOrigin.x}px), calc(-50% + ${joystickPos.y - joystickOrigin.y}px))`,
             }}
@@ -768,7 +795,7 @@ export const StarFoxGame: React.FC<StarFoxGameProps> = ({ onBackToMenu }) => {
 
       {/* TILT STATUS / NON-BLOCKING BROWSER SENSOR HELPER */}
       {steeringMode === 'tilt' && sensorStatus === 'blocked' && (
-        <div className="absolute top-16 left-1/2 -translate-x-1/2 z-40 max-w-md w-[92%] bg-amber-950/95 border border-amber-400/70 rounded-2xl p-3 shadow-2xl text-amber-100 pointer-events-auto">
+        <div className="absolute top-14 left-1/2 -translate-x-1/2 z-40 max-w-md w-[92%] bg-amber-950/90 border border-amber-400/60 rounded-2xl p-3 shadow-2xl text-amber-100 pointer-events-auto">
           <div className="flex items-start gap-2.5">
             <AlertTriangle className="h-5 w-5 text-amber-400 shrink-0 mt-0.5" />
             <div className="flex-1 text-xs leading-snug">
@@ -798,43 +825,43 @@ export const StarFoxGame: React.FC<StarFoxGameProps> = ({ onBackToMenu }) => {
       )}
 
       {steeringMode === 'tilt' && sensorStatus === 'active' && (
-        <div className="absolute bottom-3 left-1/2 -translate-x-1/2 pointer-events-auto z-30 flex flex-col items-center gap-1.5">
+        <div className="absolute bottom-2.5 left-1/2 -translate-x-1/2 pointer-events-auto z-30 flex flex-col items-center gap-1">
           {orientationLock === 'unsupported' && showLockTip && (
-            <div className="flex items-center gap-2 bg-amber-950/95 border border-amber-400/60 text-amber-100 text-[10px] sm:text-xs px-3 py-1 rounded-full shadow-lg max-w-[90vw]">
+            <div className="flex items-center gap-2 bg-amber-950/90 border border-amber-400/50 text-amber-100 text-[10px] px-2.5 py-0.5 rounded-full shadow-lg max-w-[90vw]">
               <span>
-                Browser erlaubt keine Drehsperre – aktiviere am Handy kurz <strong>Ausrichtungssperre / Drehen aus</strong>.
+                Am Handy kurz <strong>Ausrichtungssperre / Drehen aus</strong> aktivieren
               </span>
               <button
                 onClick={() => setShowLockTip(false)}
                 className="text-amber-300 hover:text-white shrink-0"
                 title="Hinweis schließen"
               >
-                <X className="h-3.5 w-3.5" />
+                <X className="h-3 w-3" />
               </button>
             </div>
           )}
 
-          <div className="flex items-center gap-1.5 bg-slate-950/85 backdrop-blur-md p-1.5 rounded-full border border-cyan-500/40 shadow-xl">
+          <div className="flex items-center gap-1 bg-slate-950/55 backdrop-blur-md px-2 py-1 rounded-full border border-cyan-500/30 shadow-lg">
             {/* Live Tilt Horizon Indicator */}
             <div
-              className="relative w-8 h-8 rounded-full border border-cyan-400/50 bg-slate-900/90 shrink-0 overflow-hidden"
+              className="relative w-6 h-6 rounded-full border border-cyan-400/40 bg-slate-900/70 shrink-0 overflow-hidden"
               title="Live Neigungs-Horizont"
             >
-              <div className="absolute top-1/2 left-0 right-0 h-[1px] bg-cyan-500/30" />
-              <div className="absolute left-1/2 top-0 bottom-0 w-[1px] bg-cyan-500/30" />
+              <div className="absolute top-1/2 left-0 right-0 h-[1px] bg-cyan-500/25" />
+              <div className="absolute left-1/2 top-0 bottom-0 w-[1px] bg-cyan-500/25" />
               <div
                 ref={tiltDotRef}
-                className="absolute top-1/2 left-1/2 w-2.5 h-2.5 rounded-full bg-cyan-400 shadow-[0_0_8px_rgba(34,211,238,0.9)]"
+                className="absolute top-1/2 left-1/2 w-2 h-2 rounded-full bg-cyan-400 shadow-[0_0_6px_rgba(34,211,238,0.9)]"
                 style={{ transform: 'translate(-50%, -50%)' }}
               />
             </div>
 
             <button
               onClick={calibrateTilt}
-              className="flex items-center gap-1 px-2.5 py-1.5 rounded-full bg-cyan-600 hover:bg-cyan-500 text-white text-[11px] font-bold active:scale-95 transition"
+              className="flex items-center gap-1 px-2 py-1 rounded-full bg-cyan-500/80 hover:bg-cyan-500 text-slate-950 text-[10px] font-black active:scale-95 transition"
               title="Aktuelle Haltung als Nullpunkt setzen"
             >
-              <Compass className="h-3.5 w-3.5" />
+              <Compass className="h-3 w-3" />
               <span>Kalibrieren</span>
             </button>
 
@@ -842,10 +869,10 @@ export const StarFoxGame: React.FC<StarFoxGameProps> = ({ onBackToMenu }) => {
               onClick={() =>
                 orientationLock === 'locked' ? unlockScreenOrientation() : lockScreenOrientation('current')
               }
-              className={`flex items-center gap-1 px-2 py-1.5 rounded-full text-[10px] font-black border transition active:scale-95 ${
+              className={`flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-black border transition active:scale-95 ${
                 orientationLock === 'locked'
-                  ? 'bg-emerald-500 text-slate-950 border-emerald-300'
-                  : 'bg-slate-800/90 text-slate-200 border-slate-700 hover:text-white'
+                  ? 'bg-emerald-500/85 text-slate-950 border-emerald-300'
+                  : 'bg-slate-900/70 text-slate-200 border-slate-700/80 hover:text-white'
               }`}
               title={
                 orientationLock === 'locked'
@@ -854,341 +881,267 @@ export const StarFoxGame: React.FC<StarFoxGameProps> = ({ onBackToMenu }) => {
               }
             >
               {orientationLock === 'locked' ? <Lock className="h-3 w-3" /> : <Unlock className="h-3 w-3" />}
-              <span className="hidden sm:inline">{orientationLock === 'locked' ? 'Gesperrt' : 'Sperren'}</span>
             </button>
 
             <button
               onClick={() => setInvertTiltX((v) => !v)}
-              className={`px-2 py-1.5 rounded-full text-[10px] font-black border transition active:scale-95 ${
+              className={`px-1.5 py-1 rounded-full text-[9px] font-black border transition active:scale-95 ${
                 invertTiltX
                   ? 'bg-amber-500 text-slate-950 border-amber-300'
-                  : 'bg-slate-800/90 text-slate-300 border-slate-700 hover:text-white'
+                  : 'bg-slate-900/70 text-slate-300 border-slate-700/80 hover:text-white'
               }`}
               title="Links/Rechts umkehren"
             >
-              X ↔
+              X↔
             </button>
 
             <button
               onClick={() => setInvertTiltY((v) => !v)}
-              className={`px-2 py-1.5 rounded-full text-[10px] font-black border transition active:scale-95 ${
+              className={`px-1.5 py-1 rounded-full text-[9px] font-black border transition active:scale-95 ${
                 invertTiltY
                   ? 'bg-amber-500 text-slate-950 border-amber-300'
-                  : 'bg-slate-800/90 text-slate-300 border-slate-700 hover:text-white'
+                  : 'bg-slate-900/70 text-slate-300 border-slate-700/80 hover:text-white'
               }`}
               title="Hoch/Runter umkehren"
             >
-              Y ↕
+              Y↕
             </button>
           </div>
         </div>
       )}
 
-      {/* Mobile Touch Hint */}
-      {steeringMode === 'touch' && !joystickActive && (
-        <div className="absolute bottom-3 left-1/2 -translate-x-1/2 pointer-events-none sm:hidden flex items-center gap-2 bg-slate-950/65 backdrop-blur-sm border border-cyan-500/30 px-3 py-1 rounded-full text-[10px] text-cyan-300 font-bold">
-          <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping" />
-          Links wischen: Steuern • Doppel-Tip: Roll
-        </div>
-      )}
-
       {/* ------------------------------------------------------------- */}
-      {/* TOP HEADER BAR                                                */}
+      {/* ULTRA-CLEAN MINIMAL TOP BAR (NO BOTTOM-LEFT BOX CLUTTER!)     */}
       {/* ------------------------------------------------------------- */}
-      <div className="absolute top-2.5 left-3 right-3 flex items-center justify-between pointer-events-none z-20 gap-2">
-        {/* Left Telemetry */}
-        <div className="hidden sm:block bg-slate-950/75 backdrop-blur-sm border border-cyan-500/35 rounded-xl px-3 py-1.5 text-[10px] font-mono text-cyan-300 shadow-md">
-          <div className="flex items-center gap-1.5 font-bold text-white">
-            <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-            {gameState.zoneName}
-          </div>
-          <div className="text-slate-400 flex items-center gap-3">
-            <span>
-              SPD: <span className="text-amber-400 font-bold">{gameState.speed} KTS</span>
-            </span>
-            <span>
-              WPN: <span className="text-emerald-400 font-bold">LV.{gameState.weaponLevel}</span>
-            </span>
-            <span>
-              DIST: <span className="text-cyan-300 font-bold">{gameState.progressPercent}%</span>
-            </span>
-          </div>
-        </div>
-
-        {/* Center Banner or Boss Health */}
-        {gameState.bossHealth !== null ? (
-          <div className="bg-rose-950/90 backdrop-blur-md px-4 py-1.5 rounded-2xl border border-rose-500/70 text-center shadow-lg min-w-[180px] sm:min-w-[260px]">
-            <div className="text-[9px] sm:text-[10px] font-black tracking-widest text-rose-300">
-              DREADNOUGHT BOSS • REACTORS
-            </div>
-            <div className="w-full h-2 bg-slate-900 rounded-full overflow-hidden mt-1 border border-rose-400/40">
+      <div className="absolute top-2 left-2.5 right-2.5 flex items-center justify-between pointer-events-none z-20 gap-2">
+        {/* Top-Left Compact Vitals + Score Pill */}
+        <div className="flex items-center gap-2.5 bg-slate-950/45 backdrop-blur-md border border-white/10 rounded-full px-3 py-1 shadow-lg">
+          {/* Shield mini bar */}
+          <div className="flex items-center gap-1.5">
+            <Shield className={`h-3.5 w-3.5 ${gameState.shield < 30 ? 'text-red-400 animate-pulse' : 'text-cyan-400'}`} />
+            <div className="w-16 sm:w-24 h-2 bg-slate-900/90 rounded-full overflow-hidden border border-white/10">
               <div
-                className="h-full bg-gradient-to-r from-rose-600 to-amber-400 transition-all duration-150"
-                style={{ width: `${gameState.bossHealth}%` }}
+                className={`h-full rounded-full transition-all duration-150 ${
+                  gameState.shield < 30
+                    ? 'bg-gradient-to-r from-red-600 to-rose-400'
+                    : 'bg-gradient-to-r from-cyan-400 to-sky-300'
+                }`}
+                style={{ width: `${Math.max(0, Math.min(100, gameState.shield))}%` }}
               />
             </div>
           </div>
-        ) : (
-          <div className="bg-slate-950/75 backdrop-blur-md px-3 sm:px-5 py-1 rounded-full border border-cyan-500/40 text-center shadow-lg shadow-cyan-500/20">
-            <div className="text-[10px] sm:text-xs tracking-widest font-black text-cyan-400">
-              STAR FOX × HYRULE SKY RAID
-            </div>
-            <div className="w-full h-1 bg-slate-800 rounded-full overflow-hidden mt-0.5">
+
+          {/* Boost mini bar */}
+          <div className="flex items-center gap-1">
+            <Flame className={`h-3.5 w-3.5 ${gameState.isOverheated ? 'text-red-500 animate-ping' : 'text-amber-400'}`} />
+            <div className="w-10 sm:w-14 h-1.5 bg-slate-900/90 rounded-full overflow-hidden border border-white/10">
               <div
-                className="h-full bg-gradient-to-r from-cyan-400 to-emerald-400 transition-all duration-300"
-                style={{ width: `${gameState.progressPercent}%` }}
+                className={`h-full rounded-full transition-all duration-100 ${
+                  gameState.isOverheated ? 'bg-red-500' : 'bg-gradient-to-r from-amber-400 to-orange-500'
+                }`}
+                style={{ width: `${Math.round(gameState.boostHeat * 100)}%` }}
+              />
+            </div>
+          </div>
+
+          {/* Smart Bombs Dots */}
+          <div className="flex items-center gap-0.5 pl-1 border-l border-white/10">
+            {[1, 2, 3].map((idx) => (
+              <Bomb
+                key={idx}
+                className={`h-3 w-3 ${
+                  idx <= gameState.smartBombs ? 'text-amber-400 drop-shadow-[0_0_4px_rgba(251,191,36,0.8)]' : 'text-slate-600/50'
+                }`}
+              />
+            ))}
+          </div>
+
+          {/* Score & Weapon Tier */}
+          <div className="pl-1.5 border-l border-white/10 font-mono text-xs sm:text-sm font-black text-amber-300 tracking-tight flex items-center gap-1.5">
+            <span>{gameState.score.toString().padStart(6, '0')}</span>
+            {gameState.weaponLevel > 1 && (
+              <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-emerald-500/25 border border-emerald-400/50 text-emerald-300">
+                LV.{gameState.weaponLevel}
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Center Boss Bar (Only appears during Dreadnought Boss Finale!) */}
+        {gameState.bossHealth !== null && (
+          <div className="bg-rose-950/75 backdrop-blur-md px-3.5 py-1 rounded-full border border-rose-500/60 text-center shadow-lg min-w-[140px] sm:min-w-[220px]">
+            <div className="text-[8px] sm:text-[9px] font-black tracking-widest text-rose-200">
+              DREADNOUGHT • {gameState.bossHealth}%
+            </div>
+            <div className="w-full h-1.5 bg-slate-900/90 rounded-full overflow-hidden mt-0.5">
+              <div
+                className="h-full bg-gradient-to-r from-rose-500 to-amber-400 transition-all duration-150"
+                style={{ width: `${gameState.bossHealth}%` }}
               />
             </div>
           </div>
         )}
 
-        {/* Right Top Controls */}
-        <div className="flex items-center gap-1.5 sm:gap-2 pointer-events-auto">
-          {/* Auto-Fire Toggle */}
+        {/* Top-Right Sleek Translucent Controls */}
+        <div className="flex items-center gap-1 sm:gap-1.5 pointer-events-auto">
           <button
             onClick={() => setAutoFire((v) => !v)}
-            className={`px-2 sm:px-2.5 py-1.5 rounded-xl border text-[10px] sm:text-xs font-bold flex items-center gap-1 shadow-md transition ${
+            className={`px-2 py-1 rounded-full border text-[10px] font-bold flex items-center gap-1 backdrop-blur-md transition ${
               autoFire
-                ? 'bg-emerald-500 text-slate-950 border-emerald-300'
-                : 'bg-slate-900/90 text-slate-300 border-slate-700 hover:text-white'
+                ? 'bg-emerald-500/85 text-slate-950 border-emerald-300 shadow-[0_0_10px_rgba(16,185,129,0.5)]'
+                : 'bg-slate-950/45 text-slate-200 border-white/15 hover:text-white'
             }`}
             title="Dauerfeuer automatisch aktivieren"
           >
-            <Zap className="h-3.5 w-3.5" />
-            <span className="hidden md:inline">Auto-Fire</span>
+            <Zap className="h-3 w-3" />
+            <span className="hidden sm:inline">Auto</span>
           </button>
 
-          {/* Touch vs Neigung Toggle */}
-          <div className="flex bg-slate-950/85 p-0.5 rounded-xl border border-cyan-500/40 shadow-md">
+          <div className="flex bg-slate-950/45 backdrop-blur-md p-0.5 rounded-full border border-white/15">
             <button
               onClick={() => switchSteeringMode('touch')}
-              className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] sm:text-xs font-bold transition ${
-                steeringMode === 'touch'
-                  ? 'bg-cyan-500 text-slate-950 shadow-sm'
-                  : 'text-slate-300 hover:text-white'
+              className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold transition ${
+                steeringMode === 'touch' ? 'bg-cyan-400 text-slate-950' : 'text-slate-300 hover:text-white'
               }`}
               title="Touch-Joystick"
             >
-              <Gamepad2 className="h-3.5 w-3.5" />
+              <Gamepad2 className="h-3 w-3" />
               <span className="hidden sm:inline">Touch</span>
             </button>
             <button
               onClick={() => switchSteeringMode('tilt')}
-              className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] sm:text-xs font-bold transition ${
-                steeringMode === 'tilt'
-                  ? 'bg-gradient-to-r from-cyan-400 to-blue-400 text-slate-950 shadow-sm'
-                  : 'text-slate-300 hover:text-white'
+              className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold transition ${
+                steeringMode === 'tilt' ? 'bg-cyan-400 text-slate-950' : 'text-slate-300 hover:text-white'
               }`}
               title="Bewegungssensor / Neigung"
             >
-              <Smartphone className="h-3.5 w-3.5" />
+              <Smartphone className="h-3 w-3" />
               <span className="hidden sm:inline">Neigung</span>
             </button>
           </div>
 
-          {/* Score */}
-          <div className="bg-slate-950/75 backdrop-blur-sm border border-cyan-500/30 rounded-xl px-2 sm:px-3 py-1 font-mono text-right shadow-md">
-            <div className="text-[8px] text-slate-400">SCORE</div>
-            <div className="text-xs sm:text-sm font-black text-amber-300 leading-none">
-              {gameState.score.toString().padStart(6, '0')}
-            </div>
-          </div>
-
-          {/* Vollbild */}
           <button
             onClick={toggleFullscreen}
-            className="p-2 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-cyan-300 hover:text-white border border-cyan-500/40 shadow-lg active:scale-95 transition flex items-center gap-1 text-xs font-bold"
+            className="p-1.5 rounded-full bg-slate-950/45 hover:bg-slate-900/75 text-cyan-300 border border-white/15 backdrop-blur-md active:scale-95 transition"
             title={isFullscreen ? 'Vollbild beenden' : 'Vollbild aktivieren'}
           >
-            {isFullscreen ? <Minimize className="h-4 w-4" /> : <Maximize className="h-4 w-4" />}
+            {isFullscreen ? <Minimize className="h-3.5 w-3.5" /> : <Maximize className="h-3.5 w-3.5" />}
           </button>
 
-          {/* Menü */}
           <button
             onClick={onBackToMenu}
-            className="p-2 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-700 hover:border-cyan-400 shadow-lg active:scale-95 transition flex items-center gap-1 text-xs font-bold"
+            className="p-1.5 rounded-full bg-slate-950/45 hover:bg-slate-900/75 text-slate-200 border border-white/15 backdrop-blur-md active:scale-95 transition"
             title="Zurück zur Spielauswahl"
           >
-            <ArrowLeft className="h-4 w-4" />
-            <span className="hidden md:inline">Menü</span>
+            <ArrowLeft className="h-3.5 w-3.5" />
           </button>
         </div>
       </div>
 
       {/* ------------------------------------------------------------- */}
-      {/* BOTTOM-LEFT VITAL GAUGES                                      */}
+      {/* FLOATING KILL / COMBO CALLOUT & COMPACT 1-LINE RADIO TICKER   */}
       {/* ------------------------------------------------------------- */}
-      <div className="absolute bottom-4 left-3 sm:bottom-6 sm:left-6 pointer-events-none max-w-[190px] sm:max-w-xs w-full bg-slate-950/75 backdrop-blur-md border border-cyan-500/30 rounded-2xl p-2.5 sm:p-4 shadow-xl text-white space-y-2">
-        <div>
-          <div className="flex justify-between items-center text-[9px] sm:text-[10px] font-bold tracking-wider text-cyan-400 mb-0.5">
-            <span className="flex items-center gap-1">
-              <Shield className="h-3 w-3 sm:h-3.5 sm:w-3.5" /> SHIELD
-            </span>
-            <span className={gameState.shield < 30 ? 'text-red-400 animate-pulse' : 'text-cyan-300'}>
-              {Math.max(0, Math.round(gameState.shield))}%
-            </span>
-          </div>
-          <div className="w-full h-2 sm:h-2.5 bg-slate-800 rounded-full overflow-hidden border border-slate-700/80 p-0.5">
-            <div
-              className={`h-full rounded-full transition-all duration-150 ${
-                gameState.shield < 30 ? 'bg-gradient-to-r from-red-600 to-rose-400' : 'bg-gradient-to-r from-cyan-500 to-blue-400'
-              }`}
-              style={{ width: `${Math.max(0, Math.min(100, gameState.shield))}%` }}
-            />
+      {gameState.lastKillText && (
+        <div className="absolute top-11 left-3 pointer-events-none z-20 animate-fade-in">
+          <div className="bg-slate-950/45 backdrop-blur-sm border border-amber-400/40 rounded-full px-2.5 py-0.5 text-[10px] sm:text-xs font-black tracking-wider text-amber-300 shadow-md">
+            ★ {gameState.lastKillText}
           </div>
         </div>
+      )}
 
-        <div>
-          <div className="flex justify-between items-center text-[9px] sm:text-[10px] font-bold tracking-wider text-amber-400 mb-0.5">
-            <span className="flex items-center gap-1">
-              <Flame className="h-3 w-3 sm:h-3.5 sm:w-3.5" /> BOOST HEAT
-            </span>
-            <span className={gameState.isOverheated ? 'text-red-500 font-black animate-pulse' : 'text-amber-300'}>
-              {gameState.isOverheated ? 'OVERHEAT!' : `${Math.round(gameState.boostHeat * 100)}%`}
-            </span>
-          </div>
-          <div className="w-full h-1.5 sm:h-2 bg-slate-800 rounded-full overflow-hidden border border-slate-700/80 p-0.5">
-            <div
-              className={`h-full rounded-full transition-all duration-100 ${
-                gameState.isOverheated ? 'bg-red-500 animate-pulse' : 'bg-gradient-to-r from-amber-400 via-orange-400 to-red-500'
-              }`}
-              style={{ width: `${Math.round(gameState.boostHeat * 100)}%` }}
-            />
-          </div>
-        </div>
-
-        <div className="flex items-center justify-between pt-1 border-t border-slate-800/80">
-          <div className="text-[8px] sm:text-[10px] font-bold text-slate-400 tracking-wider">BOMBS:</div>
-          <div className="flex items-center gap-1">
-            {[1, 2, 3].map((idx) => (
-              <div
-                key={idx}
-                className={`w-5 h-5 sm:w-6 sm:h-6 rounded flex items-center justify-center border transition ${
-                  idx <= gameState.smartBombs
-                    ? 'bg-amber-500/20 border-amber-400 text-amber-300'
-                    : 'bg-slate-900 border-slate-800 text-slate-600'
-                }`}
-              >
-                <Bomb className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* ------------------------------------------------------------- */}
-      {/* RADIO DIALOGUE BOX                                            */}
-      {/* ------------------------------------------------------------- */}
       {gameState.dialogue && gameState.dialogue.visible && sensorStatus !== 'blocked' && (
-        <div className="absolute top-14 left-1/2 -translate-x-1/2 pointer-events-none w-full max-w-lg px-3 animate-fade-in z-20">
-          <div className="bg-slate-950/85 backdrop-blur-xl border border-cyan-500/40 rounded-2xl p-2 sm:p-2.5 shadow-2xl flex items-center gap-2.5">
-            <div className="w-9 h-9 sm:w-11 sm:h-11 rounded-xl bg-cyan-950/80 border border-cyan-400/50 flex items-center justify-center shrink-0">
-              <Radio className="h-4 w-4 sm:h-5 sm:w-5 text-cyan-300 animate-pulse" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-1.5">
-                <span className="text-[9px] sm:text-[11px] font-black tracking-widest text-cyan-300 uppercase">
-                  {gameState.dialogue.speaker}
-                </span>
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
-              </div>
-              <p className="text-[10px] sm:text-xs text-slate-100 font-medium leading-snug mt-0.5">
-                "{gameState.dialogue.text}"
-              </p>
-            </div>
+        <div className="absolute top-11 left-1/2 -translate-x-1/2 pointer-events-none max-w-md w-[88%] z-20">
+          <div className="bg-slate-950/55 backdrop-blur-md border border-cyan-400/35 rounded-full px-3 py-1 shadow-lg flex items-center gap-2 truncate">
+            <Radio className="h-3.5 w-3.5 text-cyan-300 animate-pulse shrink-0" />
+            <span className="text-[9px] sm:text-[10px] font-black tracking-wider text-cyan-300 uppercase shrink-0">
+              {gameState.dialogue.speaker}:
+            </span>
+            <span className="text-[10px] sm:text-xs text-white/95 font-medium truncate">
+              "{gameState.dialogue.text}"
+            </span>
           </div>
         </div>
       )}
 
       {/* ------------------------------------------------------------- */}
-      {/* BOTTOM-RIGHT ACTION CLUSTER                                   */}
+      {/* BOTTOM-RIGHT TRANSLUCENT GLASS ACTION CONTROLS                */}
       {/* ------------------------------------------------------------- */}
-      <div className="absolute bottom-4 right-3 sm:bottom-6 sm:right-6 flex flex-col items-end gap-2 pointer-events-auto z-30">
-        <div className="flex items-center gap-1.5 sm:gap-2">
-          <button
-            onPointerDown={(e) => {
-              e.stopPropagation();
-              engineRef.current?.triggerBarrelRoll('left');
-            }}
-            className="w-11 h-11 sm:w-13 sm:h-13 rounded-2xl bg-cyan-600/85 hover:bg-cyan-500 active:scale-90 text-white flex flex-col items-center justify-center border border-cyan-300/40 shadow-lg transition text-[8px] sm:text-[9px] font-bold touch-none"
-          >
-            <RotateCw className="h-4 w-4 sm:h-5 sm:w-5 mb-0.5" />
-            <span>ROLL</span>
-          </button>
+      <div className="absolute bottom-3 right-3 sm:bottom-5 sm:right-5 flex items-center gap-1.5 sm:gap-2 pointer-events-auto z-30">
+        <button
+          onPointerDown={(e) => {
+            e.stopPropagation();
+            engineRef.current?.triggerBarrelRoll('left');
+          }}
+          className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-slate-950/40 hover:bg-cyan-950/60 active:scale-90 text-cyan-300 flex flex-col items-center justify-center border border-cyan-400/45 backdrop-blur-md shadow-lg transition text-[8px] font-bold touch-none"
+        >
+          <RotateCw className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+          <span>ROLL</span>
+        </button>
 
-          <button
-            onPointerDown={(e) => {
-              e.stopPropagation();
-              engineRef.current?.launchSmartBomb();
-            }}
-            className="w-11 h-11 sm:w-13 sm:h-13 rounded-2xl bg-amber-600/85 hover:bg-amber-500 active:scale-90 text-white flex flex-col items-center justify-center border border-amber-300/40 shadow-lg transition text-[8px] sm:text-[9px] font-bold touch-none"
-          >
-            <Bomb className="h-4 w-4 sm:h-5 sm:w-5 mb-0.5" />
-            <span>BOMB</span>
-          </button>
+        <button
+          onPointerDown={(e) => {
+            e.stopPropagation();
+            engineRef.current?.launchSmartBomb();
+          }}
+          className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-slate-950/40 hover:bg-amber-950/60 active:scale-90 text-amber-300 flex flex-col items-center justify-center border border-amber-400/45 backdrop-blur-md shadow-lg transition text-[8px] font-bold touch-none"
+        >
+          <Bomb className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+          <span>BOMB</span>
+        </button>
 
-          <button
-            onPointerDown={(e) => {
-              e.stopPropagation();
-              if (engineRef.current) engineRef.current.isBraking = true;
-            }}
-            onPointerUp={() => {
-              if (engineRef.current) engineRef.current.isBraking = false;
-            }}
-            onPointerLeave={() => {
-              if (engineRef.current) engineRef.current.isBraking = false;
-            }}
-            className="w-11 h-11 sm:w-13 sm:h-13 rounded-2xl bg-rose-700/85 hover:bg-rose-600 active:scale-90 text-white flex flex-col items-center justify-center border border-rose-300/40 shadow-lg transition text-[8px] sm:text-[9px] font-bold touch-none"
-          >
-            <Octagon className="h-4 w-4 sm:h-5 sm:w-5 mb-0.5" />
-            <span>BRAKE</span>
-          </button>
+        <button
+          onPointerDown={(e) => {
+            e.stopPropagation();
+            if (engineRef.current) engineRef.current.isBraking = true;
+          }}
+          onPointerUp={() => {
+            if (engineRef.current) engineRef.current.isBraking = false;
+          }}
+          onPointerLeave={() => {
+            if (engineRef.current) engineRef.current.isBraking = false;
+          }}
+          className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-slate-950/40 hover:bg-rose-950/60 active:scale-90 text-rose-300 flex flex-col items-center justify-center border border-rose-400/45 backdrop-blur-md shadow-lg transition text-[8px] font-bold touch-none"
+        >
+          <Octagon className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+          <span>BRAKE</span>
+        </button>
 
-          <button
-            onPointerDown={(e) => {
-              e.stopPropagation();
-              if (engineRef.current) engineRef.current.isBoosting = true;
-            }}
-            onPointerUp={() => {
-              if (engineRef.current) engineRef.current.isBoosting = false;
-            }}
-            onPointerLeave={() => {
-              if (engineRef.current) engineRef.current.isBoosting = false;
-            }}
-            className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-gradient-to-t from-orange-600 to-amber-500 hover:brightness-110 active:scale-90 text-white flex flex-col items-center justify-center border border-amber-300/50 shadow-xl transition text-[9px] sm:text-[10px] font-black touch-none"
-          >
-            <Flame className="h-5 w-5 sm:h-6 sm:w-6" />
-            <span>BOOST</span>
-          </button>
+        <button
+          onPointerDown={(e) => {
+            e.stopPropagation();
+            if (engineRef.current) engineRef.current.isBoosting = true;
+          }}
+          onPointerUp={() => {
+            if (engineRef.current) engineRef.current.isBoosting = false;
+          }}
+          onPointerLeave={() => {
+            if (engineRef.current) engineRef.current.isBoosting = false;
+          }}
+          className="w-11 h-11 sm:w-13 sm:h-13 rounded-full bg-amber-500/35 hover:bg-amber-500/55 active:scale-90 text-amber-200 flex flex-col items-center justify-center border border-amber-300/65 backdrop-blur-md shadow-lg transition text-[8px] sm:text-[9px] font-black touch-none"
+        >
+          <Flame className="h-4 w-4 sm:h-5 sm:w-5" />
+          <span>BOOST</span>
+        </button>
 
-          <button
-            onPointerDown={(e) => {
-              e.stopPropagation();
-              if (engineRef.current) {
-                engineRef.current.isFiring = true;
-                engineRef.current.fireWeapon(false);
-              }
-            }}
-            onPointerUp={() => {
-              if (engineRef.current) engineRef.current.isFiring = false;
-            }}
-            onPointerLeave={() => {
-              if (engineRef.current) engineRef.current.isFiring = false;
-            }}
-            className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-gradient-to-t from-cyan-600 to-blue-500 hover:brightness-110 active:scale-90 text-white flex flex-col items-center justify-center border-2 border-cyan-300 shadow-xl transition text-[10px] sm:text-xs font-black touch-none"
-          >
-            <Crosshair className="h-6 w-6 sm:h-7 sm:w-7" />
-            <span>FIRE</span>
-          </button>
-        </div>
-
-        <div className="hidden lg:block text-right text-[10px] text-slate-400 font-mono bg-slate-950/60 px-3 py-1.5 rounded-xl border border-slate-800">
-          <span className="text-cyan-300 font-bold">W/A/S/D</span>: Steuern •{' '}
-          <span className="text-cyan-300 font-bold">Q/E</span>: Roll •{' '}
-          <span className="text-cyan-300 font-bold">Shift</span>: Boost •{' '}
-          <span className="text-cyan-300 font-bold">Space</span>: Laser •{' '}
-          <span className="text-cyan-300 font-bold">B</span>: Bombe
-        </div>
+        <button
+          onPointerDown={(e) => {
+            e.stopPropagation();
+            if (engineRef.current) {
+              engineRef.current.isFiring = true;
+              engineRef.current.fireWeapon(false);
+            }
+          }}
+          onPointerUp={() => {
+            if (engineRef.current) engineRef.current.isFiring = false;
+          }}
+          onPointerLeave={() => {
+            if (engineRef.current) engineRef.current.isFiring = false;
+          }}
+          className="w-13 h-13 sm:w-15 sm:h-15 rounded-full bg-cyan-500/40 hover:bg-cyan-500/60 active:scale-90 text-white flex flex-col items-center justify-center border-2 border-cyan-300/80 backdrop-blur-md shadow-[0_0_16px_rgba(34,211,238,0.4)] transition text-[9px] sm:text-[10px] font-black touch-none"
+        >
+          <Crosshair className="h-5 w-5 sm:h-6 sm:w-6" />
+          <span>FIRE</span>
+        </button>
       </div>
 
       {/* ------------------------------------------------------------- */}

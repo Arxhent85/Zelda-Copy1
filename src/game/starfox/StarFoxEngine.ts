@@ -32,6 +32,8 @@ export interface StarFoxState {
   isMissionComplete: boolean;
   isGameOver: boolean;
   shieldActive: boolean;
+  combo: number;
+  lastKillText: string | null;
 }
 
 interface ColliderItem {
@@ -56,16 +58,18 @@ interface EnemyEntity {
   hitRadius: number;
   bodyRadius: number;
   linkedBarrier?: THREE.Mesh;
+  hitFlashTimer?: number;
 }
 
 interface Projectile {
-  mesh: THREE.Mesh;
+  mesh: THREE.Object3D;
   position: THREE.Vector3;
   velocity: THREE.Vector3;
   isPlayer: boolean;
   damage: number;
   lifetime: number;
   isChargeShot?: boolean;
+  homingTarget?: EnemyEntity | null;
 }
 
 interface RingItem {
@@ -74,6 +78,14 @@ interface RingItem {
   radius: number;
   type: 'boost_arch' | 'shield_ring' | 'speed_ring' | 'weapon_pod';
   collected: boolean;
+}
+
+interface ActiveExplosionFX {
+  fireball: THREE.Mesh;
+  shockwave: THREE.Mesh;
+  age: number;
+  maxAge: number;
+  maxScale: number;
 }
 
 export class StarFoxEngine {
@@ -113,8 +125,16 @@ export class StarFoxEngine {
   private leftFlap!: THREE.Mesh;
   private rightFlap!: THREE.Mesh;
   private thrusterFlames: THREE.Mesh[] = [];
+  private thrusterCores: THREE.Mesh[] = [];
+  private muzzleFlashes: THREE.Mesh[] = [];
+  private muzzleFlashTimer = 0;
+  private barrelRollRing!: THREE.Mesh;
+  private sonicBoomRing!: THREE.Mesh;
+  private sonicBoomAge = 99;
+  private wasBoosting = false;
   private shieldBubble!: THREE.Mesh;
   private chargeSphere!: THREE.Mesh;
+  private chargeRing!: THREE.Mesh;
   public shieldActiveTimer = 0;
   private collisionGraceTimer = 0;
   private wingmen: { group: THREE.Group; offset: THREE.Vector3; phase: number }[] = [];
@@ -128,7 +148,7 @@ export class StarFoxEngine {
   public autoFire = false;
   private fireCooldown = 0;
   private chargeTime = 0;
-  private readonly MAX_CHARGE_TIME = 1.1;
+  private readonly MAX_CHARGE_TIME = 1.05;
 
   private shipLocalPos = new THREE.Vector3(0, 24, 0);
   private shipVelX = 0;
@@ -165,7 +185,13 @@ export class StarFoxEngine {
     isMissionComplete: false,
     isGameOver: false,
     shieldActive: false,
+    combo: 1,
+    lastKillText: null,
   };
+
+  private comboTimer = 0;
+  private killTextTimer = 0;
+  private hitMarkerTimer = 0;
 
   public onStateUpdate?: (state: StarFoxState) => void;
   public onReticleUpdate?: (
@@ -173,7 +199,8 @@ export class StarFoxEngine {
     nearY: number,
     farX: number,
     farY: number,
-    locked: boolean
+    locked: boolean,
+    hitConfirmed: boolean
   ) => void;
 
   // World Entities & Colliders
@@ -187,8 +214,13 @@ export class StarFoxEngine {
 
   // Pooled/Shared Geometries & Materials (Zero GC Lag on Mobile)
   private laserGeo!: THREE.CapsuleGeometry;
+  private laserCoreGeo!: THREE.CapsuleGeometry;
+  private laserCoreMat!: THREE.MeshBasicMaterial;
   private playerLaserMats: Record<number, THREE.MeshBasicMaterial> = {};
   private enemyLaserMat!: THREE.MeshBasicMaterial;
+  private fireballGeo!: THREE.SphereGeometry;
+  private shockwaveGeo!: THREE.TorusGeometry;
+  private explosionFXList: ActiveExplosionFX[] = [];
   private particlePools: Array<{ points: THREE.Points; velocities: Float32Array; age: number }> = [];
 
   // Particles & FX
@@ -196,9 +228,10 @@ export class StarFoxEngine {
   private speedLinesMesh!: THREE.LineSegments;
   private wingtipTrailGeoLeft!: THREE.BufferGeometry;
   private wingtipTrailGeoRight!: THREE.BufferGeometry;
+  private wingtipTrailMat!: THREE.LineBasicMaterial;
   private wingtipPointsLeft: THREE.Vector3[] = [];
   private wingtipPointsRight: THREE.Vector3[] = [];
-  private readonly TRAIL_LENGTH = 22;
+  private readonly TRAIL_LENGTH = 26;
 
   // Loop & Timing
   private isRunning = false;
@@ -288,7 +321,7 @@ export class StarFoxEngine {
   }
 
   // -------------------------------------------------------------
-  // INITIALIZATION (ULTRA-FLUID MOBILE PERFORMANCE)
+  // INITIALIZATION (ULTRA-FLUID 60FPS + HDR ENVIRONMENT REFLECTIONS)
   // -------------------------------------------------------------
   private initThree() {
     this.scene = new THREE.Scene();
@@ -303,17 +336,56 @@ export class StarFoxEngine {
       canvas: this.canvas,
       antialias: !this.isMobile,
       powerPreference: 'high-performance',
-      precision: this.isMobile ? 'mediump' : 'highp',
+      precision: 'highp', // Essential: prevents mobile mediump float overflow on snow/terrain shaders!
     });
     this.renderer.setSize(width, height);
 
-    // Crucial mobile FPS win: limit pixelRatio to 1.25 on phones (saves ~2.5x GPU fill-rate)
     const pixelRatio = this.isMobile
-      ? Math.min(window.devicePixelRatio || 1, 1.25)
-      : Math.min(window.devicePixelRatio || 1, 1.75);
+      ? Math.min(window.devicePixelRatio || 1, 1.4)
+      : Math.min(window.devicePixelRatio || 1, 1.85);
     this.renderer.setPixelRatio(pixelRatio);
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.05;
+    this.renderer.toneMappingExposure = 1.15;
+
+    // Generate lightweight procedural Sky + Sun + Ocean Environment Map (0 runtime cost, huge visual upgrade for metallic ships/arches!)
+    try {
+      const pmrem = new THREE.PMREMGenerator(this.renderer);
+      const envScene = new THREE.Scene();
+      const envGeo = new THREE.SphereGeometry(50, 16, 12);
+      const envMat = new THREE.ShaderMaterial({
+        side: THREE.BackSide,
+        vertexShader: `
+          varying vec3 vPos;
+          void main() {
+            vPos = normalize(position);
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+          }
+        `,
+        fragmentShader: `
+          varying vec3 vPos;
+          void main() {
+            vec3 skyTop = vec3(0.18, 0.52, 0.88);
+            vec3 horizon = vec3(0.75, 0.92, 1.0);
+            vec3 ground = vec3(0.16, 0.42, 0.55);
+            vec3 col = vPos.y >= 0.0
+              ? mix(horizon, skyTop, pow(vPos.y, 0.6))
+              : mix(horizon, ground, pow(-vPos.y, 0.5));
+            vec3 sunDir = normalize(vec3(0.45, 0.78, 0.38));
+            float sunAmt = max(0.0, dot(vPos, sunDir));
+            col += vec3(1.0, 0.96, 0.82) * pow(sunAmt, 16.0) * 1.8;
+            gl_FragColor = vec4(col, 1.0);
+          }
+        `,
+      });
+      envScene.add(new THREE.Mesh(envGeo, envMat));
+      const envRT = pmrem.fromScene(envScene);
+      this.scene.environment = envRT.texture;
+      pmrem.dispose();
+      envGeo.dispose();
+      envMat.dispose();
+    } catch {
+      // Fallback if PMREM unavailable
+    }
 
     // Disable expensive real-time shadow maps & multi-pass HDR bloom on smartphones!
     this.renderer.shadowMap.enabled = !this.isMobile;
@@ -323,7 +395,7 @@ export class StarFoxEngine {
         this.composer = new EffectComposer(this.renderer);
         this.composer.setPixelRatio(pixelRatio);
         this.composer.addPass(new RenderPass(this.scene, this.camera));
-        this.composer.addPass(new UnrealBloomPass(new THREE.Vector2(width, height), 0.35, 0.35, 0.84));
+        this.composer.addPass(new UnrealBloomPass(new THREE.Vector2(width, height), 0.38, 0.35, 0.82));
         this.composer.addPass(new OutputPass());
       } catch {
         this.composer = null;
@@ -334,14 +406,22 @@ export class StarFoxEngine {
   }
 
   private initSharedAssets() {
-    this.laserGeo = new THREE.CapsuleGeometry(0.28, 4.4, 4, 6);
+    this.laserGeo = new THREE.CapsuleGeometry(0.42, 5.6, 4, 8);
     this.laserGeo.rotateX(Math.PI / 2);
+
+    this.laserCoreGeo = new THREE.CapsuleGeometry(0.18, 5.2, 4, 6);
+    this.laserCoreGeo.rotateX(Math.PI / 2);
+    this.laserCoreMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+
     this.playerLaserMats = {
-      1: new THREE.MeshBasicMaterial({ color: 0x00f5d4 }),
-      2: new THREE.MeshBasicMaterial({ color: 0x38bdf8 }),
-      3: new THREE.MeshBasicMaterial({ color: 0x10b981 }),
+      1: new THREE.MeshBasicMaterial({ color: 0x00f5d4, transparent: true, opacity: 0.78 }),
+      2: new THREE.MeshBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.82 }),
+      3: new THREE.MeshBasicMaterial({ color: 0x10b981, transparent: true, opacity: 0.85 }),
     };
     this.enemyLaserMat = new THREE.MeshBasicMaterial({ color: 0xff1e56 });
+
+    this.fireballGeo = new THREE.SphereGeometry(1.0, 12, 10);
+    this.shockwaveGeo = new THREE.TorusGeometry(1.0, 0.14, 8, 28);
   }
 
   // -------------------------------------------------------------
@@ -364,14 +444,15 @@ export class StarFoxEngine {
 
     this.skyLighting = new SkyAndLightingManager(this.scene);
     this.skyLighting.initLighting(this.isMobile ? 'low' : 'high');
-    this.skyLighting.timeOfDay = 10.4;
-    this.skyLighting.timeScale = 0.06;
+    // Lock golden mid-morning sun angle for maximum alpine mountain & water beauty
+    this.skyLighting.timeOfDay = 10.6;
+    this.skyLighting.isTimeCycleActive = false;
 
     if (this.skyLighting.skyDome) {
       this.skyLighting.skyDome.scale.setScalar(20);
     }
     if (this.skyLighting.fog) {
-      this.skyLighting.fog.density = 0.00024;
+      this.skyLighting.fog.density = 0.00018;
     }
 
     // Batched Instanced Zelda Pine Trees & Boulders (Only 4 WebGL Draw Calls Total!)
@@ -437,17 +518,18 @@ export class StarFoxEngine {
   }
 
   private populateInstancedHyruleNature() {
-    const treeCount = this.isMobile ? 220 : 340;
+    const treeCount = this.isMobile ? 240 : 360;
     const rockCount = this.isMobile ? 110 : 180;
 
-    const trunkGeo = new THREE.CylinderGeometry(0.45, 0.7, 5.5, 6);
-    const trunkMat = new THREE.MeshStandardMaterial({ color: 0x4a2e16, roughness: 0.9 });
-    const f1Geo = new THREE.ConeGeometry(4.2, 8.5, 6);
-    const fMat = new THREE.MeshStandardMaterial({ color: 0x1e5624, roughness: 0.8 });
+    const trunkGeo = new THREE.CylinderGeometry(0.42, 0.72, 5.5, 7);
+    const trunkMat = new THREE.MeshStandardMaterial({ color: 0x5c3a1e, roughness: 0.85, metalness: 0.05 });
+    const f1Geo = new THREE.ConeGeometry(4.4, 8.2, 8);
+    const fMatLower = new THREE.MeshStandardMaterial({ color: 0x24632b, roughness: 0.72, metalness: 0.04 });
+    const fMatUpper = new THREE.MeshStandardMaterial({ color: 0x348c3d, roughness: 0.68, metalness: 0.04 });
 
     const trunkInst = new THREE.InstancedMesh(trunkGeo, trunkMat, treeCount);
-    const f1Inst = new THREE.InstancedMesh(f1Geo, fMat, treeCount);
-    const f2Inst = new THREE.InstancedMesh(f1Geo, fMat, treeCount);
+    const f1Inst = new THREE.InstancedMesh(f1Geo, fMatLower, treeCount);
+    const f2Inst = new THREE.InstancedMesh(f1Geo, fMatUpper, treeCount);
 
     const dummy = new THREE.Object3D();
     let placedTrees = 0;
@@ -456,7 +538,7 @@ export class StarFoxEngine {
       const wx = (Math.random() - 0.5) * 1650;
       const wz = (Math.random() - 0.5) * 1650;
       const wy = this.getHyruleHeight(wx, wz);
-      if (wy > this.WATER_Y + 1.5 && wy < 52) {
+      if (wy > this.WATER_Y + 1.5 && wy < 46) {
         const s = 1.2 + Math.random() * 1.1;
 
         dummy.position.set(wx, wy + 2.5 * s, wz);
@@ -465,13 +547,13 @@ export class StarFoxEngine {
         dummy.updateMatrix();
         trunkInst.setMatrixAt(placedTrees, dummy.matrix);
 
-        dummy.position.set(wx, wy + 7.2 * s, wz);
+        dummy.position.set(wx, wy + 7.0 * s, wz);
         dummy.scale.set(s, s, s);
         dummy.updateMatrix();
         f1Inst.setMatrixAt(placedTrees, dummy.matrix);
 
-        dummy.position.set(wx, wy + 11.2 * s, wz);
-        dummy.scale.set(s * 0.72, s * 0.72, s * 0.72);
+        dummy.position.set(wx, wy + 10.8 * s, wz);
+        dummy.scale.set(s * 0.74, s * 0.78, s * 0.74);
         dummy.updateMatrix();
         f2Inst.setMatrixAt(placedTrees, dummy.matrix);
 
@@ -483,8 +565,8 @@ export class StarFoxEngine {
     f2Inst.count = placedTrees;
     this.scene.add(trunkInst, f1Inst, f2Inst);
 
-    const rockGeo = new THREE.IcosahedronGeometry(3.2, 0);
-    const rockMat = new THREE.MeshStandardMaterial({ color: 0x5c6670, roughness: 0.85, flatShading: true });
+    const rockGeo = new THREE.DodecahedronGeometry(3.0, 1);
+    const rockMat = new THREE.MeshStandardMaterial({ color: 0x7a8896, roughness: 0.75, metalness: 0.08 });
     const rockInst = new THREE.InstancedMesh(rockGeo, rockMat, rockCount);
     let placedRocks = 0;
 
@@ -492,11 +574,11 @@ export class StarFoxEngine {
       const wx = (Math.random() - 0.5) * 1750;
       const wz = (Math.random() - 0.5) * 1750;
       const wy = this.getHyruleHeight(wx, wz);
-      if (wy > this.WATER_Y + 0.5) {
-        const s = 1.1 + Math.random() * 2.2;
-        dummy.position.set(wx, wy + s * 0.5, wz);
-        dummy.scale.set(s, s * 0.75, s * 1.2);
-        dummy.rotation.set(Math.random(), Math.random(), Math.random());
+      if (wy > this.WATER_Y + 0.5 && wy < 42) {
+        const s = 1.0 + Math.random() * 1.9;
+        dummy.position.set(wx, wy + s * 0.45, wz);
+        dummy.scale.set(s * 1.1, s * 0.72, s * 1.25);
+        dummy.rotation.set(Math.random() * 0.4, Math.random() * Math.PI, Math.random() * 0.4);
         dummy.updateMatrix();
         rockInst.setMatrixAt(placedRocks, dummy.matrix);
         placedRocks++;
@@ -552,25 +634,52 @@ export class StarFoxEngine {
     const planet = new THREE.Mesh(
       new THREE.SphereGeometry(780, 32, 32),
       new THREE.MeshStandardMaterial({
-        color: 0xe6eff8,
-        roughness: 0.78,
-        emissive: 0x1e3a5f,
-        emissiveIntensity: 0.25,
+        color: 0xdbeafe,
+        roughness: 0.65,
+        metalness: 0.1,
+        emissive: 0x3b82f6,
+        emissiveIntensity: 0.28,
       })
     );
     planetGroup.add(planet);
 
-    const ring = new THREE.Mesh(
-      new THREE.RingGeometry(1020, 1950, 48),
-      new THREE.MeshStandardMaterial({
-        color: 0xc8e0f4,
+    const innerRing = new THREE.Mesh(
+      new THREE.RingGeometry(1020, 1520, 48),
+      new THREE.MeshBasicMaterial({
+        color: 0xe0f2fe,
         side: THREE.DoubleSide,
         transparent: true,
         opacity: 0.72,
       })
     );
-    ring.rotation.set(Math.PI / 2.3, -0.25, 0.65);
-    planetGroup.add(ring);
+    innerRing.rotation.set(Math.PI / 2.3, -0.25, 0.65);
+    planetGroup.add(innerRing);
+
+    const outerRing = new THREE.Mesh(
+      new THREE.RingGeometry(1580, 2050, 48),
+      new THREE.MeshBasicMaterial({
+        color: 0x7dd3fc,
+        side: THREE.DoubleSide,
+        transparent: true,
+        opacity: 0.42,
+      })
+    );
+    outerRing.rotation.set(Math.PI / 2.3, -0.25, 0.65);
+    planetGroup.add(outerRing);
+
+    // Orbiting Corneria Moon
+    const moon = new THREE.Mesh(
+      new THREE.SphereGeometry(210, 20, 20),
+      new THREE.MeshStandardMaterial({
+        color: 0xfef3c7,
+        roughness: 0.7,
+        emissive: 0xf59e0b,
+        emissiveIntensity: 0.22,
+      })
+    );
+    moon.position.set(-1650, 520, 400);
+    planetGroup.add(moon);
+
     this.scene.add(planetGroup);
   }
 
@@ -658,111 +767,199 @@ export class StarFoxEngine {
   }
 
   // -------------------------------------------------------------
-  // PLAYER SHIP: ARWING (1.2x PRESENCE SCALE, UNIFIED RIGHT-HANDED FRAME)
+  // PLAYER SHIP: ICONIC ARWING INTERCEPTOR + SPECIAL FX RINGS
   // -------------------------------------------------------------
   private createPlayerShip() {
     this.shipGroup = new THREE.Group();
     this.shipMesh = new THREE.Group();
-    this.shipMesh.scale.setScalar(1.2);
+    this.shipMesh.scale.setScalar(1.22);
 
-    const ceramicMat = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.22, metalness: 0.78 });
-    const blueArmorMat = new THREE.MeshStandardMaterial({ color: 0x1d4ed8, roughness: 0.28, metalness: 0.85 });
-    const redTrimMat = new THREE.MeshStandardMaterial({ color: 0xef4444, roughness: 0.25, metalness: 0.65 });
+    // Bright pearl-white ceramic & royal cobalt armor with subtle emissive lift so it always gleams in sun or shade
+    const ceramicMat = new THREE.MeshStandardMaterial({
+      color: 0xffffff,
+      roughness: 0.2,
+      metalness: 0.45,
+      emissive: 0x334155,
+      emissiveIntensity: 0.25,
+    });
+    const blueArmorMat = new THREE.MeshStandardMaterial({
+      color: 0x2563eb,
+      roughness: 0.22,
+      metalness: 0.65,
+      emissive: 0x1d4ed8,
+      emissiveIntensity: 0.35,
+    });
+    const gDiffuserGlowMat = new THREE.MeshBasicMaterial({ color: 0x00f0ff });
+    const redTrimMat = new THREE.MeshStandardMaterial({
+      color: 0xef4444,
+      roughness: 0.25,
+      metalness: 0.45,
+      emissive: 0x991b1b,
+      emissiveIntensity: 0.3,
+    });
     const canopyMat = new THREE.MeshStandardMaterial({
-      color: 0x0ea5e9,
-      roughness: 0.1,
-      metalness: 0.9,
-      emissive: 0x0369a1,
-      emissiveIntensity: 0.4,
+      color: 0x38bdf8,
+      roughness: 0.08,
+      metalness: 0.85,
+      emissive: 0x0284c7,
+      emissiveIntensity: 0.55,
     });
 
-    const nose = new THREE.Mesh(new THREE.ConeGeometry(0.85, 4.2, 6).rotateX(-Math.PI / 2), ceramicMat);
-    nose.position.set(0, 0, -2.4);
+    // Sleek forward nosecone & fuselage spine
+    const nose = new THREE.Mesh(new THREE.ConeGeometry(0.88, 4.6, 6).rotateX(-Math.PI / 2), ceramicMat);
+    nose.position.set(0, 0, -2.5);
     this.shipMesh.add(nose);
 
-    const cockpit = new THREE.Mesh(new THREE.ConeGeometry(0.7, 2.5, 6).rotateX(-Math.PI / 2), canopyMat);
-    cockpit.position.set(0, 0.45, -1.3);
+    const dorsalSpine = new THREE.Mesh(new THREE.BoxGeometry(1.15, 0.72, 3.8), ceramicMat);
+    dorsalSpine.position.set(0, 0.16, 0.1);
+    this.shipMesh.add(dorsalSpine);
+
+    const cockpit = new THREE.Mesh(new THREE.ConeGeometry(0.68, 2.7, 6).rotateX(-Math.PI / 2), canopyMat);
+    cockpit.position.set(0, 0.52, -1.1);
     this.shipMesh.add(cockpit);
 
-    const core = new THREE.Mesh(new THREE.BoxGeometry(1.65, 0.9, 3.6), blueArmorMat);
-    core.position.set(0, 0, 0.2);
-    this.shipMesh.add(core);
+    const lowerHull = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.65, 3.5), blueArmorMat);
+    lowerHull.position.set(0, -0.18, 0.25);
+    this.shipMesh.add(lowerHull);
 
-    [-1.4, 1.4].forEach((xOff) => {
-      const gunPod = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.18, 0.24, 3.2, 8).rotateX(Math.PI / 2),
-        blueArmorMat
+    // Iconic Twin Blue G-Diffuser Pods + Cyan Gravity Glow Strips + Under-Wing Plasma Cannons & Muzzle Flashes
+    [-1.48, 1.48].forEach((xOff) => {
+      const diffuserPod = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.58, 3.6), blueArmorMat);
+      diffuserPod.position.set(xOff, 0.0, 0.25);
+      this.shipMesh.add(diffuserPod);
+
+      const glowStrip = new THREE.Mesh(new THREE.BoxGeometry(0.66, 0.16, 2.9), gDiffuserGlowMat);
+      glowStrip.position.set(xOff, 0.12, 0.15);
+      this.shipMesh.add(glowStrip);
+
+      const cannonBarrel = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.12, 0.18, 3.4, 8).rotateX(Math.PI / 2),
+        ceramicMat
       );
-      gunPod.position.set(xOff, -0.1, -0.5);
-      this.shipMesh.add(gunPod);
+      cannonBarrel.position.set(xOff * 1.15, -0.18, -0.85);
+      this.shipMesh.add(cannonBarrel);
+
+      const muzzleFlash = new THREE.Mesh(
+        new THREE.SphereGeometry(0.45, 8, 8),
+        new THREE.MeshBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0.0 })
+      );
+      muzzleFlash.position.set(xOff * 1.15, -0.18, -2.6);
+      this.shipMesh.add(muzzleFlash);
+      this.muzzleFlashes.push(muzzleFlash);
     });
 
-    const wingGeo = new THREE.BufferGeometry();
-    wingGeo.setAttribute(
-      'position',
-      new THREE.BufferAttribute(
-        new Float32Array([
-          0.8, 0.06, 0.1, 5.0, 0.45, 1.9, 0.8, 0.0, 1.9,
-          -0.8, 0.06, 0.1, -0.8, 0.0, 1.9, -5.0, 0.45, 1.9,
-        ]),
-        3
-      )
-    );
-    wingGeo.computeVertexNormals();
-    this.shipMesh.add(new THREE.Mesh(wingGeo, ceramicMat));
+    // Volumetric Swept Main Wings (solid thickness so visible from all bank angles!)
+    const leftWing = new THREE.Mesh(new THREE.BoxGeometry(4.4, 0.14, 1.75), ceramicMat);
+    leftWing.position.set(-2.95, 0.18, 1.05);
+    leftWing.rotation.set(0, -0.26, -0.08);
+    this.shipMesh.add(leftWing);
 
-    const finGeo = new THREE.BoxGeometry(0.14, 1.35, 1.5);
+    const rightWing = new THREE.Mesh(new THREE.BoxGeometry(4.4, 0.14, 1.75), ceramicMat);
+    rightWing.position.set(2.95, 0.18, 1.05);
+    rightWing.rotation.set(0, 0.26, 0.08);
+    this.shipMesh.add(rightWing);
+
+    // Crimson Wingtip Stabilizer Fins
+    const finGeo = new THREE.BoxGeometry(0.18, 1.35, 1.65);
     const leftFin = new THREE.Mesh(finGeo, redTrimMat);
-    leftFin.position.set(-5.0, 0.55, 1.9);
+    leftFin.position.set(-5.0, 0.48, 1.75);
+    leftFin.rotation.z = 0.15;
     this.shipMesh.add(leftFin);
 
     const rightFin = new THREE.Mesh(finGeo, redTrimMat);
-    rightFin.position.set(5.0, 0.55, 1.9);
+    rightFin.position.set(5.0, 0.48, 1.75);
+    rightFin.rotation.z = -0.15;
     this.shipMesh.add(rightFin);
 
-    const flapGeo = new THREE.BoxGeometry(1.5, 0.08, 0.65);
+    const flapGeo = new THREE.BoxGeometry(1.6, 0.1, 0.65);
     this.leftFlap = new THREE.Mesh(flapGeo, redTrimMat);
-    this.leftFlap.position.set(-2.6, 0.2, 2.0);
+    this.leftFlap.position.set(-2.6, 0.24, 1.98);
     this.shipMesh.add(this.leftFlap);
 
     this.rightFlap = new THREE.Mesh(flapGeo, redTrimMat);
-    this.rightFlap.position.set(2.6, 0.2, 2.0);
+    this.rightFlap.position.set(2.6, 0.24, 1.98);
     this.shipMesh.add(this.rightFlap);
 
-    const thrusterMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, metalness: 0.9, roughness: 0.2 });
-    const flameMat = new THREE.MeshBasicMaterial({ color: 0x00f0ff });
+    // Multi-Layered Plasma Afterburners (White-hot core + glowing plasma outer cone)
+    const thrusterMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, metalness: 0.85, roughness: 0.2 });
+    const outerFlameMat = new THREE.MeshBasicMaterial({ color: 0x00f0ff, transparent: true, opacity: 0.82 });
+    const innerCoreMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
 
     [
-      new THREE.Vector3(-1.0, 0.1, 1.95),
-      new THREE.Vector3(1.0, 0.1, 1.95),
-      new THREE.Vector3(0.0, 0.45, 2.05),
+      new THREE.Vector3(-1.45, 0.0, 2.0),
+      new THREE.Vector3(1.45, 0.0, 2.0),
+      new THREE.Vector3(0.0, 0.18, 2.05),
     ].forEach((pos, idx) => {
-      const nozzle = new THREE.Mesh(new THREE.CylinderGeometry(0.36, 0.44, 0.95, 10).rotateX(Math.PI / 2), thrusterMat);
+      const isCenter = idx === 2;
+      const nozzle = new THREE.Mesh(
+        new THREE.CylinderGeometry(isCenter ? 0.46 : 0.34, isCenter ? 0.54 : 0.42, 0.9, 12).rotateX(Math.PI / 2),
+        thrusterMat
+      );
       nozzle.position.copy(pos);
       this.shipMesh.add(nozzle);
 
-      const flame = new THREE.Mesh(
-        new THREE.ConeGeometry(0.36, 2.5 + (idx === 2 ? 0.7 : 0), 10).rotateX(Math.PI / 2),
-        flameMat
+      const nozzleRing = new THREE.Mesh(
+        new THREE.TorusGeometry(isCenter ? 0.48 : 0.36, 0.07, 8, 16),
+        gDiffuserGlowMat
       );
-      flame.position.set(pos.x, pos.y, pos.z + 1.3);
+      nozzleRing.position.set(pos.x, pos.y, pos.z + 0.45);
+      this.shipMesh.add(nozzleRing);
+
+      const flame = new THREE.Mesh(
+        new THREE.ConeGeometry(isCenter ? 0.48 : 0.36, isCenter ? 3.4 : 2.6, 10).rotateX(Math.PI / 2),
+        outerFlameMat.clone()
+      );
+      flame.position.set(pos.x, pos.y, pos.z + 1.45);
       this.shipMesh.add(flame);
       this.thrusterFlames.push(flame);
+
+      const coreFlame = new THREE.Mesh(
+        new THREE.ConeGeometry(isCenter ? 0.24 : 0.18, isCenter ? 2.2 : 1.7, 8).rotateX(Math.PI / 2),
+        innerCoreMat
+      );
+      coreFlame.position.set(pos.x, pos.y, pos.z + 1.15);
+      this.shipMesh.add(coreFlame);
+      this.thrusterCores.push(coreFlame);
     });
 
+    // Electromagnetic Barrel Roll Deflector Vortex Ring
+    this.barrelRollRing = new THREE.Mesh(
+      new THREE.TorusGeometry(5.4, 0.22, 8, 32),
+      new THREE.MeshBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0.0 })
+    );
+    this.barrelRollRing.visible = false;
+    this.shipMesh.add(this.barrelRollRing);
+
+    // Sonic Boom Vapor Shock-Ring on Boost Ignition
+    this.sonicBoomRing = new THREE.Mesh(
+      new THREE.TorusGeometry(3.2, 0.28, 8, 32),
+      new THREE.MeshBasicMaterial({ color: 0xfffbeb, transparent: true, opacity: 0.0 })
+    );
+    this.sonicBoomRing.visible = false;
+    this.shipGroup.add(this.sonicBoomRing);
+
+    // Hexagonal Energy Shield Bubble
     this.shieldBubble = new THREE.Mesh(
-      new THREE.IcosahedronGeometry(4.5, 2),
+      new THREE.IcosahedronGeometry(4.8, 2),
       new THREE.MeshBasicMaterial({ color: 0x00f0ff, wireframe: true, transparent: true, opacity: 0.0 })
     );
     this.shieldBubble.visible = false;
     this.shipMesh.add(this.shieldBubble);
 
+    // Nose Charge-Shot Plasma Orb + Orbiting Gyro Ring
     this.chargeSphere = new THREE.Mesh(
-      new THREE.SphereGeometry(0.6, 12, 12),
-      new THREE.MeshBasicMaterial({ color: 0x48cae4, transparent: true, opacity: 0.0 })
+      new THREE.SphereGeometry(0.65, 12, 12),
+      new THREE.MeshBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.0 })
     );
-    this.chargeSphere.position.set(0, 0, -4.5);
+    this.chargeSphere.position.set(0, 0, -4.8);
     this.shipMesh.add(this.chargeSphere);
+
+    this.chargeRing = new THREE.Mesh(
+      new THREE.TorusGeometry(1.15, 0.09, 8, 24),
+      new THREE.MeshBasicMaterial({ color: 0xfacc15, transparent: true, opacity: 0.0 })
+    );
+    this.chargeRing.position.set(0, 0, -4.8);
+    this.shipMesh.add(this.chargeRing);
 
     this.shipGroup.add(this.shipMesh);
     this.scene.add(this.shipGroup);
@@ -772,21 +969,29 @@ export class StarFoxEngine {
     const offsets = [new THREE.Vector3(-34, 8, -42), new THREE.Vector3(34, 7, -46)];
     offsets.forEach((offset, idx) => {
       const g = new THREE.Group();
-      const whiteMat = new THREE.MeshStandardMaterial({ color: 0xe2e8f0, metalness: 0.7, roughness: 0.3 });
+      const whiteMat = new THREE.MeshStandardMaterial({
+        color: 0xf8fafc,
+        metalness: 0.45,
+        roughness: 0.25,
+        emissive: 0x334155,
+        emissiveIntensity: 0.2,
+      });
       const accentMat = new THREE.MeshStandardMaterial({
         color: idx === 0 ? 0x10b981 : 0x3b82f6,
-        metalness: 0.8,
-        roughness: 0.3,
+        metalness: 0.6,
+        roughness: 0.25,
+        emissive: idx === 0 ? 0x059669 : 0x1d4ed8,
+        emissiveIntensity: 0.35,
       });
-      const nose = new THREE.Mesh(new THREE.ConeGeometry(0.75, 3.6, 5).rotateX(-Math.PI / 2), whiteMat);
+      const nose = new THREE.Mesh(new THREE.ConeGeometry(0.75, 3.8, 5).rotateX(-Math.PI / 2), whiteMat);
       nose.position.z = -1.6;
       g.add(nose);
-      const wings = new THREE.Mesh(new THREE.BoxGeometry(7.8, 0.16, 1.5), accentMat);
+      const wings = new THREE.Mesh(new THREE.BoxGeometry(7.8, 0.18, 1.5), accentMat);
       wings.position.z = 0.6;
       g.add(wings);
       const flame = new THREE.Mesh(
-        new THREE.ConeGeometry(0.32, 2.0, 8).rotateX(Math.PI / 2),
-        new THREE.MeshBasicMaterial({ color: idx === 0 ? 0x10b981 : 0x3b82f6 })
+        new THREE.ConeGeometry(0.36, 2.4, 8).rotateX(Math.PI / 2),
+        new THREE.MeshBasicMaterial({ color: idx === 0 ? 0x34d399 : 0x38bdf8 })
       );
       flame.position.z = 2.2;
       g.add(flame);
@@ -796,14 +1001,14 @@ export class StarFoxEngine {
   }
 
   private createWingtipTrails() {
-    const trailMat = new THREE.LineBasicMaterial({ color: 0x00e5ff, transparent: true, opacity: 0.75 });
+    this.wingtipTrailMat = new THREE.LineBasicMaterial({ color: 0x00e5ff, transparent: true, opacity: 0.85 });
     this.wingtipTrailGeoLeft = new THREE.BufferGeometry();
     this.wingtipTrailGeoRight = new THREE.BufferGeometry();
     const empty = new Float32Array(this.TRAIL_LENGTH * 3);
     this.wingtipTrailGeoLeft.setAttribute('position', new THREE.BufferAttribute(empty.slice(), 3));
     this.wingtipTrailGeoRight.setAttribute('position', new THREE.BufferAttribute(empty.slice(), 3));
-    this.scene.add(new THREE.Line(this.wingtipTrailGeoLeft, trailMat));
-    this.scene.add(new THREE.Line(this.wingtipTrailGeoRight, trailMat));
+    this.scene.add(new THREE.Line(this.wingtipTrailGeoLeft, this.wingtipTrailMat));
+    this.scene.add(new THREE.Line(this.wingtipTrailGeoRight, this.wingtipTrailMat));
   }
 
   private createSkyscraperTexture(): THREE.CanvasTexture {
@@ -1409,84 +1614,121 @@ export class StarFoxEngine {
     if (this.state.isGameOver || this.state.isMissionComplete) return;
     if (isContinuous && this.fireCooldown > 0) return;
 
-    this.fireCooldown = 0.14;
+    this.fireCooldown = 0.13;
+    this.muzzleFlashTimer = 0.06;
     this.shipMesh.getWorldQuaternion(this.tmpQuat);
-    const { aimDir } = this.getShipAimDirection(this.tmpQuat, this.shipGroup.position);
+    const { aimDir, lockedEnemy } = this.getShipAimDirection(this.tmpQuat, this.shipGroup.position);
 
     const lvl = this.state.weaponLevel;
+    const flashColor = lvl === 3 ? 0x10b981 : lvl === 2 ? 0x38bdf8 : 0x00f5d4;
+    this.muzzleFlashes.forEach((mf) => {
+      const mat = mf.material as THREE.MeshBasicMaterial;
+      mat.color.setHex(flashColor);
+      mat.opacity = 0.95;
+      mf.scale.setScalar(1.35);
+    });
+
     if (lvl === 1) {
-      this.spawnPlayerLaser(-1.5, -0.1, -2.2, aimDir, 1, 24);
-      this.spawnPlayerLaser(1.5, -0.1, -2.2, aimDir, 1, 24);
+      this.spawnPlayerLaser(-1.65, -0.18, -2.5, aimDir, 1, 25, null);
+      this.spawnPlayerLaser(1.65, -0.18, -2.5, aimDir, 1, 25, null);
     } else if (lvl === 2) {
-      this.spawnPlayerLaser(-1.7, -0.1, -2.2, aimDir, 2, 30);
-      this.spawnPlayerLaser(1.7, -0.1, -2.2, aimDir, 2, 30);
-      this.spawnPlayerLaser(0, 0.2, -3.5, aimDir, 2, 24);
+      this.spawnPlayerLaser(-1.75, -0.18, -2.5, aimDir, 2, 30, lockedEnemy);
+      this.spawnPlayerLaser(1.75, -0.18, -2.5, aimDir, 2, 30, lockedEnemy);
+      this.spawnPlayerLaser(0, 0.15, -3.6, aimDir, 2, 26, lockedEnemy);
     } else {
-      this.spawnPlayerLaser(-1.9, -0.1, -2.2, aimDir, 3, 36);
-      this.spawnPlayerLaser(1.9, -0.1, -2.2, aimDir, 3, 36);
-      this.spawnPlayerLaser(0, 0.25, -3.5, aimDir, 3, 36);
+      this.spawnPlayerLaser(-1.95, -0.18, -2.5, aimDir, 3, 36, lockedEnemy);
+      this.spawnPlayerLaser(1.95, -0.18, -2.5, aimDir, 3, 36, lockedEnemy);
+      this.spawnPlayerLaser(0, 0.2, -3.8, aimDir, 3, 36, lockedEnemy);
     }
     starFoxAudio.playLaser();
   }
 
-  private spawnPlayerLaser(lx: number, ly: number, lz: number, aimDir: THREE.Vector3, lvl: number, damage: number) {
-    const laserMesh = new THREE.Mesh(this.laserGeo, this.playerLaserMats[lvl]);
+  private spawnPlayerLaser(
+    lx: number,
+    ly: number,
+    lz: number,
+    aimDir: THREE.Vector3,
+    lvl: number,
+    damage: number,
+    homingTarget: EnemyEntity | null
+  ) {
+    const boltGroup = new THREE.Group();
+    boltGroup.add(new THREE.Mesh(this.laserGeo, this.playerLaserMats[lvl]));
+    boltGroup.add(new THREE.Mesh(this.laserCoreGeo, this.laserCoreMat));
+
     this.shipMesh.updateMatrixWorld();
     const worldPos = new THREE.Vector3(lx, ly, lz).applyMatrix4(this.shipMesh.matrixWorld);
-    laserMesh.position.copy(worldPos);
-    laserMesh.lookAt(worldPos.x + aimDir.x, worldPos.y + aimDir.y, worldPos.z + aimDir.z);
+    boltGroup.position.copy(worldPos);
+    boltGroup.lookAt(worldPos.x + aimDir.x, worldPos.y + aimDir.y, worldPos.z + aimDir.z);
 
-    this.scene.add(laserMesh);
+    this.scene.add(boltGroup);
     this.projectiles.push({
-      mesh: laserMesh,
-      position: laserMesh.position,
-      velocity: aimDir.clone().multiplyScalar(420),
+      mesh: boltGroup,
+      position: boltGroup.position,
+      velocity: aimDir.clone().multiplyScalar(440),
       isPlayer: true,
       damage,
-      lifetime: 1.8,
+      lifetime: 1.75,
+      homingTarget: lvl >= 2 ? homingTarget : null,
     });
   }
 
   private releaseChargeShot() {
     starFoxAudio.playChargeShot();
+    this.cameraShakeIntensity = Math.max(this.cameraShakeIntensity, 0.18);
     this.shipMesh.getWorldQuaternion(this.tmpQuat);
-    const { aimDir } = this.getShipAimDirection(this.tmpQuat, this.shipGroup.position);
+    const { aimDir, lockedEnemy } = this.getShipAimDirection(this.tmpQuat, this.shipGroup.position);
 
-    const chargeMesh = new THREE.Mesh(
-      new THREE.SphereGeometry(2.4, 12, 12),
-      new THREE.MeshBasicMaterial({ color: 0x38bdf8 })
+    const chargeGroup = new THREE.Group();
+    chargeGroup.add(
+      new THREE.Mesh(
+        new THREE.SphereGeometry(2.3, 12, 12),
+        new THREE.MeshBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.85 })
+      )
     );
-    const worldPos = new THREE.Vector3(0, 0, -4.5).applyMatrix4(this.shipMesh.matrixWorld);
-    chargeMesh.position.copy(worldPos);
+    chargeGroup.add(
+      new THREE.Mesh(new THREE.SphereGeometry(1.3, 10, 10), this.laserCoreMat)
+    );
+    chargeGroup.add(
+      new THREE.Mesh(
+        new THREE.TorusGeometry(2.9, 0.22, 8, 24),
+        new THREE.MeshBasicMaterial({ color: 0xfacc15 })
+      )
+    );
 
-    this.scene.add(chargeMesh);
+    const worldPos = new THREE.Vector3(0, 0, -4.8).applyMatrix4(this.shipMesh.matrixWorld);
+    chargeGroup.position.copy(worldPos);
+
+    this.scene.add(chargeGroup);
     this.projectiles.push({
-      mesh: chargeMesh,
-      position: chargeMesh.position,
-      velocity: aimDir.clone().multiplyScalar(280),
+      mesh: chargeGroup,
+      position: chargeGroup.position,
+      velocity: aimDir.clone().multiplyScalar(310),
       isPlayer: true,
-      damage: 190,
+      damage: 210,
       lifetime: 2.6,
       isChargeShot: true,
+      homingTarget: lockedEnemy,
     });
 
     this.chargeSphere.scale.set(1, 1, 1);
     (this.chargeSphere.material as THREE.MeshBasicMaterial).opacity = 0;
+    (this.chargeRing.material as THREE.MeshBasicMaterial).opacity = 0;
   }
 
   public triggerBarrelRoll(direction: 'left' | 'right' = 'left') {
     if (this.isBarrelRolling || this.barrelRollCooldown > 0) return;
     this.isBarrelRolling = true;
-    this.barrelRollTimer = 0.52;
+    this.barrelRollTimer = 0.54;
     this.barrelRollDirection = direction;
-    this.barrelRollCooldown = 0.65;
-    this.cameraShakeIntensity = 0.22;
-    this.shipVelX += direction === 'left' ? -36 : 36;
+    this.barrelRollCooldown = 0.62;
+    this.cameraShakeIntensity = 0.2;
+    this.shipVelX += direction === 'left' ? -38 : 38;
     starFoxAudio.playBarrelRoll();
 
     this.projectiles.forEach((p) => {
-      if (!p.isPlayer && p.position.distanceTo(this.shipGroup.position) < 42) {
-        p.velocity.negate().multiplyScalar(1.4);
+      if (!p.isPlayer && p.position.distanceTo(this.shipGroup.position) < 46) {
+        p.velocity.negate().multiplyScalar(1.5);
         p.isPlayer = true;
       }
     });
@@ -1496,7 +1738,7 @@ export class StarFoxEngine {
     if (this.state.smartBombs <= 0 || this.state.isGameOver) return;
     this.state.smartBombs--;
     starFoxAudio.playSmartBomb();
-    this.cameraShakeIntensity = 0.55;
+    this.cameraShakeIntensity = 0.6;
 
     this.projectiles = this.projectiles.filter((p) => {
       if (!p.isPlayer) {
@@ -1505,53 +1747,100 @@ export class StarFoxEngine {
       }
       return true;
     });
-    this.createShockwave(this.shipGroup.position, 48);
+
+    const bombCenter = this.shipGroup.position
+      .clone()
+      .addScaledVector(this.tmpRailFwd, 110);
+    this.spawnExplosionFX(bombCenter, 65, 0x00f5d4);
+    this.spawnExplosionParticles(bombCenter, 55, 0x38bdf8);
 
     this.enemies.forEach((enemy) => {
-      if (!enemy.destroyed && enemy.mesh.position.distanceTo(this.shipGroup.position) < 520) {
-        enemy.health -= 260;
+      if (!enemy.destroyed && enemy.mesh.position.distanceTo(this.shipGroup.position) < 540) {
+        enemy.health -= 280;
         if (enemy.health <= 0) this.destroyEnemy(enemy);
       }
     });
     this.notifyState();
   }
 
-  private createShockwave(pos: THREE.Vector3, maxScale = 36) {
-    const shockGeo = new THREE.TorusGeometry(2, 0.8, 10, 28);
-    const shockMat = new THREE.MeshBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0.85 });
-    const shockMesh = new THREE.Mesh(shockGeo, shockMat);
-    shockMesh.position.copy(pos);
-    this.scene.add(shockMesh);
+  private spawnExplosionFX(pos: THREE.Vector3, maxScale = 24, ringColorHex = 0xff9e00) {
+    const fireballMat = new THREE.MeshBasicMaterial({
+      color: 0xfff3b0,
+      transparent: true,
+      opacity: 0.95,
+    });
+    const fireball = new THREE.Mesh(this.fireballGeo, fireballMat);
+    fireball.position.copy(pos);
 
-    let progress = 0;
-    const id = window.setInterval(() => {
-      progress += 0.07;
-      shockMesh.scale.setScalar(progress * maxScale);
-      shockMat.opacity = Math.max(0, 0.85 - progress * 0.9);
-      if (progress >= 1.0) {
-        clearInterval(id);
-        this.scene.remove(shockMesh);
-        shockGeo.dispose();
-        shockMat.dispose();
-      }
-    }, 30);
-    this.activeIntervals.push(id);
+    const shockMat = new THREE.MeshBasicMaterial({
+      color: ringColorHex,
+      transparent: true,
+      opacity: 0.9,
+    });
+    const shockwave = new THREE.Mesh(this.shockwaveGeo, shockMat);
+    shockwave.position.copy(pos);
+    shockwave.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, 0);
+
+    this.scene.add(fireball, shockwave);
+    this.explosionFXList.push({
+      fireball,
+      shockwave,
+      age: 0,
+      maxAge: 0.48,
+      maxScale,
+    });
   }
 
   private destroyEnemy(enemy: EnemyEntity) {
     enemy.destroyed = true;
     this.scene.remove(enemy.mesh);
     if (enemy.linkedBarrier) enemy.linkedBarrier.visible = false;
-    this.state.score += enemy.points;
+
+    // Combo multiplier streak
+    if (this.comboTimer > 0) {
+      this.state.combo = Math.min(5, this.state.combo + 1);
+    } else {
+      this.state.combo = 1;
+    }
+    this.comboTimer = 3.6;
+
+    const earnedPoints = enemy.points * this.state.combo;
+    this.state.score += earnedPoints;
     this.state.hits++;
+    this.hitMarkerTimer = 0.18;
+
+    const labelMap: Record<EnemyEntity['type'], string> = {
+      drone: 'INTERCEPTOR',
+      corvette: 'HEAVY CORVETTE',
+      crystal: 'ENERGY CRYSTAL',
+      mine: 'PLASMA MINE',
+      guardian: 'TURRET',
+      gate_core: 'GATE OPENED',
+      boss_core: 'REACTOR CORE',
+    };
+    this.state.lastKillText =
+      this.state.combo > 1
+        ? `${labelMap[enemy.type]} +${earnedPoints} (${this.state.combo}x COMBO!)`
+        : `${labelMap[enemy.type]} +${earnedPoints}`;
+    this.killTextTimer = 1.65;
+
     starFoxAudio.playExplosion();
-    this.spawnExplosionParticles(enemy.mesh.position, enemy.type === 'boss_core' ? 45 : 22);
+    const isBig = enemy.type === 'boss_core' || enemy.type === 'corvette' || enemy.type === 'gate_core';
+    this.spawnExplosionFX(
+      enemy.mesh.position,
+      isBig ? 34 : 18,
+      enemy.type === 'crystal' ? 0x00f5d4 : 0xff7b00
+    );
+    this.spawnExplosionParticles(
+      enemy.mesh.position,
+      isBig ? 42 : 24,
+      enemy.type === 'crystal' ? 0x00f5d4 : 0xffaa00
+    );
 
     if (enemy.type === 'mine') {
-      this.createShockwave(enemy.mesh.position, 22);
       this.enemies.forEach((other) => {
-        if (!other.destroyed && other.mesh.position.distanceTo(enemy.mesh.position) < 42) {
-          other.health -= 60;
+        if (!other.destroyed && other.mesh.position.distanceTo(enemy.mesh.position) < 46) {
+          other.health -= 70;
           if (other.health <= 0) this.destroyEnemy(other);
         }
       });
@@ -1561,8 +1850,11 @@ export class StarFoxEngine {
       const aliveCores = this.bossCores.filter((c) => !c.destroyed).length;
       if (aliveCores === 0 && this.dreadnoughtGroup) {
         this.state.score += 5000;
-        this.createShockwave(this.dreadnoughtGroup.position, 65);
-        this.spawnExplosionParticles(this.dreadnoughtGroup.position, 55);
+        this.state.lastKillText = 'DREADNOUGHT DESTROYED +5000!';
+        this.killTextTimer = 3.0;
+        this.cameraShakeIntensity = 0.75;
+        this.spawnExplosionFX(this.dreadnoughtGroup.position, 85, 0x00f5d4);
+        this.spawnExplosionParticles(this.dreadnoughtGroup.position, 65, 0xffaa00);
         this.scene.remove(this.dreadnoughtGroup);
         this.dreadnoughtGroup = null;
       }
@@ -1570,7 +1862,7 @@ export class StarFoxEngine {
     this.notifyState();
   }
 
-  private spawnExplosionParticles(pos: THREE.Vector3, count = 24) {
+  private spawnExplosionParticles(pos: THREE.Vector3, count = 24, colorHex = 0xffaa00) {
     const geo = new THREE.BufferGeometry();
     const positions = new Float32Array(count * 3);
     const velocities = new Float32Array(count * 3);
@@ -1578,12 +1870,15 @@ export class StarFoxEngine {
       positions[i * 3 + 0] = pos.x;
       positions[i * 3 + 1] = pos.y;
       positions[i * 3 + 2] = pos.z;
-      velocities[i * 3 + 0] = (Math.random() - 0.5) * 48;
-      velocities[i * 3 + 1] = (Math.random() - 0.5) * 48;
-      velocities[i * 3 + 2] = (Math.random() - 0.5) * 48;
+      const speed = 22 + Math.random() * 44;
+      const theta = Math.random() * Math.PI * 2;
+      const phi = Math.acos(2 * Math.random() - 1);
+      velocities[i * 3 + 0] = Math.sin(phi) * Math.cos(theta) * speed;
+      velocities[i * 3 + 1] = Math.sin(phi) * Math.sin(theta) * speed;
+      velocities[i * 3 + 2] = Math.cos(phi) * speed;
     }
     geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    const mat = new THREE.PointsMaterial({ color: 0xffaa00, size: 2.5, transparent: true, opacity: 1.0 });
+    const mat = new THREE.PointsMaterial({ color: colorHex, size: 2.8, transparent: true, opacity: 1.0 });
     const points = new THREE.Points(geo, mat);
     this.scene.add(points);
     this.particlePools.push({ points, velocities, age: 0 });
@@ -1596,10 +1891,32 @@ export class StarFoxEngine {
     if (this.state.isGameOver) return;
     this.totalTime += dt;
     if (this.collisionGraceTimer > 0) this.collisionGraceTimer -= dt;
+    if (this.hitMarkerTimer > 0) this.hitMarkerTimer -= dt;
 
-    // 1. Speed & Boost/Brake (Balanced Playable Cruise Speed!)
+    if (this.comboTimer > 0) {
+      this.comboTimer -= dt;
+      if (this.comboTimer <= 0 && this.state.combo > 1) {
+        this.state.combo = 1;
+      }
+    }
+    if (this.killTextTimer > 0) {
+      this.killTextTimer -= dt;
+      if (this.killTextTimer <= 0 && this.state.lastKillText) {
+        this.state.lastKillText = null;
+      }
+    }
+
+    // 1. Speed & Boost/Brake + Sonic Boom Ignition FX
     let speedMult = 1.0;
-    if (this.isBoosting && !this.state.isOverheated) {
+    const activeBoost = this.isBoosting && !this.state.isOverheated;
+    if (activeBoost && !this.wasBoosting) {
+      // Trigger Sonic Boom Vapor Ring!
+      this.sonicBoomAge = 0;
+      this.cameraShakeIntensity = Math.max(this.cameraShakeIntensity, 0.14);
+    }
+    this.wasBoosting = activeBoost;
+
+    if (activeBoost) {
       speedMult = 1.68;
       this.state.boostHeat = Math.min(1.0, this.state.boostHeat + dt * 0.22);
       if (this.state.boostHeat >= 1.0) this.state.isOverheated = true;
@@ -1611,7 +1928,7 @@ export class StarFoxEngine {
 
     this.currentSpeed = this.baseSpeed * speedMult;
     this.state.speed = Math.round(this.currentSpeed);
-    starFoxAudio.setThrusterIntensity(speedMult, this.isBoosting && !this.state.isOverheated);
+    starFoxAudio.setThrusterIntensity(speedMult, activeBoost);
 
     // 2. Spline Progress
     this.currentDistance += this.currentSpeed * dt;
@@ -1663,7 +1980,6 @@ export class StarFoxEngine {
     }
     if (worldShipPos.y < minWorldY) {
       const pushUp = minWorldY - worldShipPos.y;
-      // Trigger actual scrape damage & bounce if hitting ground fast
       if (pushUp > 1.2 && this.collisionGraceTimer <= 0) {
         this.collisionGraceTimer = 0.75;
         this.takePlayerDamage(10);
@@ -1684,21 +2000,19 @@ export class StarFoxEngine {
         const minDist = col.radius + shipRadius;
 
         if (distXZ < minDist && distXZ > 0.001) {
-          // Physically push the Arwing cleanly outside the obstacle!
           const push = minDist - distXZ + 1.5;
           const nx = dx / distXZ;
           const nz = dz / distXZ;
           worldShipPos.x += nx * push;
           worldShipPos.z += nz * push;
 
-          // Update local offset to match deflected world position
           const relX = this.tmpVec3.set(nx, 0, nz).dot(this.tmpRailRight);
           this.shipLocalPos.x += relX * push;
           this.shipVelX = Math.sign(relX || 1) * 32;
 
           if (this.collisionGraceTimer <= 0) {
             this.collisionGraceTimer = 0.75;
-            this.spawnExplosionParticles(worldShipPos, 14);
+            this.spawnExplosionParticles(worldShipPos, 16, 0xff7b00);
             this.takePlayerDamage(16);
           }
         }
@@ -1710,7 +2024,7 @@ export class StarFoxEngine {
     this.tmpBasis.makeBasis(this.tmpRailRight, this.tmpRailUp, this.tmpVec3.copy(this.tmpRailFwd).negate());
     this.shipGroup.quaternion.setFromRotationMatrix(this.tmpBasis);
 
-    // 6. Nose Yaw/Pitch + Banking + Barrel Roll
+    // 6. Nose Yaw/Pitch + Banking + Barrel Roll Deflector Vortex
     const targetYaw = -this.inputYawRoll * THREE.MathUtils.degToRad(22.0);
     const targetPitch = this.inputPitch * THREE.MathUtils.degToRad(24.0);
     const targetRoll = -this.inputYawRoll * THREE.MathUtils.degToRad(58.0) + this.currentSplineBank * 0.5;
@@ -1720,11 +2034,19 @@ export class StarFoxEngine {
 
     if (this.isBarrelRolling) {
       this.barrelRollTimer -= dt;
-      const rollProgress = 1.0 - this.barrelRollTimer / 0.52;
+      const rollProgress = 1.0 - this.barrelRollTimer / 0.54;
       this.smoothedRoll = rollProgress * Math.PI * 2 * (this.barrelRollDirection === 'left' ? 1 : -1);
-      if (this.barrelRollTimer <= 0) this.isBarrelRolling = false;
+      this.barrelRollRing.visible = true;
+      this.barrelRollRing.rotation.z = this.smoothedRoll * 1.5;
+      (this.barrelRollRing.material as THREE.MeshBasicMaterial).opacity =
+        Math.sin(rollProgress * Math.PI) * 0.75;
+      if (this.barrelRollTimer <= 0) {
+        this.isBarrelRolling = false;
+        this.barrelRollRing.visible = false;
+      }
     } else {
       this.smoothedRoll = THREE.MathUtils.lerp(this.smoothedRoll, targetRoll, dt * 12.0);
+      this.barrelRollRing.visible = false;
     }
 
     this.shipMesh.rotation.order = 'YXZ';
@@ -1732,13 +2054,47 @@ export class StarFoxEngine {
 
     if (this.barrelRollCooldown > 0) this.barrelRollCooldown -= dt;
 
-    // 7. Flaps & Thrusters
+    // Sonic Boom Vapor Shock-Ring Animation
+    if (this.sonicBoomAge < 0.42) {
+      this.sonicBoomAge += dt;
+      const p = this.sonicBoomAge / 0.42;
+      this.sonicBoomRing.visible = true;
+      this.sonicBoomRing.scale.setScalar(0.8 + p * 3.8);
+      this.sonicBoomRing.position.z = p * 8.5;
+      (this.sonicBoomRing.material as THREE.MeshBasicMaterial).opacity = (1.0 - p) * 0.72;
+    } else {
+      this.sonicBoomRing.visible = false;
+    }
+
+    // Muzzle Flash Fade
+    if (this.muzzleFlashTimer > 0) {
+      this.muzzleFlashTimer -= dt;
+      const op = Math.max(0, this.muzzleFlashTimer / 0.06);
+      this.muzzleFlashes.forEach((mf) => {
+        (mf.material as THREE.MeshBasicMaterial).opacity = op;
+        mf.scale.setScalar(0.6 + op * 0.8);
+      });
+    } else {
+      this.muzzleFlashes.forEach((mf) => {
+        (mf.material as THREE.MeshBasicMaterial).opacity = 0;
+      });
+    }
+
+    // 7. Flaps, Plasma Afterburners & Boost Color Shift
     const flapAngle = this.isBraking ? THREE.MathUtils.degToRad(40.0) : 0;
     this.leftFlap.rotation.x = THREE.MathUtils.lerp(this.leftFlap.rotation.x, flapAngle, dt * 12.0);
     this.rightFlap.rotation.x = THREE.MathUtils.lerp(this.rightFlap.rotation.x, flapAngle, dt * 12.0);
 
-    const flameScale = this.isBoosting && !this.state.isOverheated ? 2.8 : this.isBraking ? 0.35 : 1.05;
-    this.thrusterFlames.forEach((f) => f.scale.set(1.0, 1.0 + Math.random() * 0.16, flameScale));
+    const flameScale = activeBoost ? 3.1 : this.isBraking ? 0.35 : 1.1;
+    const flameHex = activeBoost ? 0xff8800 : 0x00f0ff;
+    this.thrusterFlames.forEach((f) => {
+      f.scale.set(1.0 + Math.random() * 0.14, 1.0 + Math.random() * 0.14, flameScale);
+      (f.material as THREE.MeshBasicMaterial).color.setHex(flameHex);
+    });
+    this.thrusterCores.forEach((c) => {
+      c.scale.set(1.0, 1.0, flameScale * 0.85);
+    });
+    this.wingtipTrailMat.color.setHex(activeBoost ? 0xf59e0b : 0x00e5ff);
 
     // 8. Firing & Charge Shot
     if (this.fireCooldown > 0) this.fireCooldown -= dt;
@@ -1750,6 +2106,10 @@ export class StarFoxEngine {
       const s = 0.5 + ratio * 2.2;
       this.chargeSphere.scale.set(s, s, s);
       (this.chargeSphere.material as THREE.MeshBasicMaterial).opacity = ratio * 0.85;
+      this.chargeRing.scale.setScalar(0.6 + ratio * 1.9);
+      this.chargeRing.rotation.z += dt * 10.0;
+      this.chargeRing.rotation.x += dt * 6.0;
+      (this.chargeRing.material as THREE.MeshBasicMaterial).opacity = ratio > 0.25 ? ratio * 0.9 : 0;
       if (ratio > 0.25) starFoxAudio.playChargeHum(ratio);
     } else if (this.chargeTime >= 0.72) {
       this.releaseChargeShot();
@@ -1757,6 +2117,7 @@ export class StarFoxEngine {
     } else {
       this.chargeTime = 0;
       (this.chargeSphere.material as THREE.MeshBasicMaterial).opacity = 0;
+      (this.chargeRing.material as THREE.MeshBasicMaterial).opacity = 0;
     }
 
     // 9. Smooth Chase Camera
@@ -1781,7 +2142,7 @@ export class StarFoxEngine {
     );
     this.camera.rotation.z += this.smoothedCamRoll;
 
-    const targetFov = this.isBoosting && !this.state.isOverheated ? 86.0 : this.isBraking ? 62.0 : 72.0;
+    const targetFov = activeBoost ? 86.0 : this.isBraking ? 62.0 : 72.0;
     this.camera.fov = THREE.MathUtils.lerp(this.camera.fov, targetFov, dt * 6.0);
     this.camera.updateProjectionMatrix();
 
@@ -1804,7 +2165,8 @@ export class StarFoxEngine {
         THREE.MathUtils.clamp((1 - pNear.y) * 50, 10, 90),
         THREE.MathUtils.clamp((pFar.x + 1) * 50, 8, 92),
         THREE.MathUtils.clamp((1 - pFar.y) * 50, 10, 90),
-        this.state.isTargetLocked
+        this.state.isTargetLocked,
+        this.hitMarkerTimer > 0
       );
     }
 
@@ -1858,11 +2220,36 @@ export class StarFoxEngine {
     }
 
     if (this.speedLinesMesh) {
-      (this.speedLinesMesh.material as THREE.LineBasicMaterial).opacity = this.isBoosting ? 0.72 : 0.25;
-      this.speedLinesMesh.rotation.z += dt * (this.isBoosting ? 2.8 : 0.8);
+      (this.speedLinesMesh.material as THREE.LineBasicMaterial).opacity = activeBoost ? 0.78 : 0.22;
+      this.speedLinesMesh.rotation.z += dt * (activeBoost ? 3.2 : 0.8);
     }
 
-    // 13. Explosion Particle Pool Tick
+    // 13. Frame-Driven 3D Fireball + Shockwave Explosion FX Tick
+    for (let i = this.explosionFXList.length - 1; i >= 0; i--) {
+      const fx = this.explosionFXList[i];
+      fx.age += dt;
+      const p = Math.min(1.0, fx.age / fx.maxAge);
+
+      const fbScale = fx.maxScale * 0.45 * Math.sin(p * Math.PI);
+      fx.fireball.scale.setScalar(Math.max(0.1, fbScale));
+      const fbMat = fx.fireball.material as THREE.MeshBasicMaterial;
+      if (p < 0.3) fbMat.color.setHex(0xffffff);
+      else if (p < 0.65) fbMat.color.setHex(0xff8800);
+      else fbMat.color.setHex(0xef4444);
+      fbMat.opacity = Math.max(0, 1.0 - p * 1.15);
+
+      fx.shockwave.scale.setScalar(1.0 + p * fx.maxScale);
+      (fx.shockwave.material as THREE.MeshBasicMaterial).opacity = Math.max(0, (1.0 - p) * 0.88);
+
+      if (fx.age >= fx.maxAge) {
+        this.scene.remove(fx.fireball, fx.shockwave);
+        (fx.fireball.material as THREE.Material).dispose();
+        (fx.shockwave.material as THREE.Material).dispose();
+        this.explosionFXList.splice(i, 1);
+      }
+    }
+
+    // Explosion Particle Pool Tick
     for (let i = this.particlePools.length - 1; i >= 0; i--) {
       const pp = this.particlePools[i];
       pp.age += dt;
@@ -1874,8 +2261,8 @@ export class StarFoxEngine {
         arr[j + 2] += pp.velocities[j + 2] * dt;
       }
       attr.needsUpdate = true;
-      (pp.points.material as THREE.PointsMaterial).opacity = Math.max(0, 1.0 - pp.age * 1.6);
-      if (pp.age >= 0.65) {
+      (pp.points.material as THREE.PointsMaterial).opacity = Math.max(0, 1.0 - pp.age * 1.55);
+      if (pp.age >= 0.68) {
         this.scene.remove(pp.points);
         pp.points.geometry.dispose();
         (pp.points.material as THREE.Material).dispose();
@@ -1901,18 +2288,25 @@ export class StarFoxEngine {
         ring.collected = true;
         ring.mesh.visible = false;
         starFoxAudio.playRingCollect();
+        this.spawnExplosionFX(ring.position, 16, 0x00f5d4);
 
         if (ring.type === 'boost_arch') {
           this.state.score += 1000;
           this.state.boostHeat = 0;
           this.state.isOverheated = false;
+          this.state.lastKillText = 'COOLANT ARCH +1000';
+          this.killTextTimer = 1.4;
         } else if (ring.type === 'shield_ring') {
           this.state.shield = Math.min(this.state.maxShield, this.state.shield + 35);
           this.shieldActiveTimer = 4.0;
           this.state.score += 400;
+          this.state.lastKillText = 'SHIELD RECHARGED +35%';
+          this.killTextTimer = 1.4;
         } else if (ring.type === 'weapon_pod') {
           this.state.weaponLevel = Math.min(3, this.state.weaponLevel + 1) as 1 | 2 | 3;
           this.state.score += 800;
+          this.state.lastKillText = `HYPER LASER LV.${this.state.weaponLevel}!`;
+          this.killTextTimer = 1.8;
         } else {
           this.state.score += 500;
         }
@@ -1935,6 +2329,14 @@ export class StarFoxEngine {
     this.enemies.forEach((enemy) => {
       if (enemy.destroyed) return;
 
+      if (enemy.hitFlashTimer && enemy.hitFlashTimer > 0) {
+        enemy.hitFlashTimer -= dt;
+        const s = enemy.hitFlashTimer > 0 ? 1.12 : 1.0;
+        enemy.mesh.scale.setScalar(
+          (enemy.type === 'drone' ? 1.35 : enemy.type === 'corvette' ? 1.3 : enemy.type === 'guardian' ? 1.5 : 1.0) * s
+        );
+      }
+
       if (enemy.type === 'crystal' || enemy.type === 'mine' || enemy.type === 'gate_core' || enemy.type === 'boss_core') {
         enemy.mesh.rotation.y += dt * 1.6;
       }
@@ -1947,11 +2349,9 @@ export class StarFoxEngine {
         );
       }
 
-      // Direct Player vs Enemy / Crystal / Mine / Gate Body Collision!
       const distToPlayer = enemy.mesh.position.distanceTo(worldShipPos);
       if (distToPlayer < enemy.bodyRadius + shipRadius) {
         if (enemy.type === 'crystal') {
-          // Flying through crystal shatters & collects points cleanly!
           this.destroyEnemy(enemy);
           return;
         } else {
@@ -1973,18 +2373,44 @@ export class StarFoxEngine {
       }
     });
 
-    // 17. Projectiles Update
+    // 17. Projectiles Update (with Homing Assist & Charge AoE Blast!)
     for (let i = this.projectiles.length - 1; i >= 0; i--) {
       const p = this.projectiles[i];
       p.lifetime -= dt;
+
+      if (p.isPlayer && p.homingTarget && !p.homingTarget.destroyed) {
+        const toTarget = this.tmpVec1.subVectors(p.homingTarget.mesh.position, p.position).normalize();
+        const speed = p.velocity.length();
+        p.velocity.normalize().lerp(toTarget, dt * 6.5).normalize().multiplyScalar(speed);
+        p.mesh.lookAt(p.position.x + p.velocity.x, p.position.y + p.velocity.y, p.position.z + p.velocity.z);
+      }
+
       p.position.addScaledVector(p.velocity, dt);
 
       if (p.isPlayer) {
         for (const enemy of this.enemies) {
-          if (!enemy.destroyed && p.position.distanceTo(enemy.mesh.position) < (p.isChargeShot ? 18 : enemy.hitRadius)) {
+          if (!enemy.destroyed && p.position.distanceTo(enemy.mesh.position) < (p.isChargeShot ? 20 : enemy.hitRadius)) {
             enemy.health -= p.damage;
+            enemy.hitFlashTimer = 0.09;
+            this.hitMarkerTimer = 0.14;
             p.lifetime = 0;
-            if (enemy.health <= 0) this.destroyEnemy(enemy);
+
+            if (p.isChargeShot) {
+              // Nova Charge Shot triggers an AoE splash shockwave!
+              this.spawnExplosionFX(p.position, 32, 0x38bdf8);
+              this.enemies.forEach((other) => {
+                if (!other.destroyed && other !== enemy && other.mesh.position.distanceTo(p.position) < 42) {
+                  other.health -= 110;
+                  if (other.health <= 0) this.destroyEnemy(other);
+                }
+              });
+            }
+
+            if (enemy.health <= 0) {
+              this.destroyEnemy(enemy);
+            } else {
+              this.spawnExplosionParticles(p.position, 8, 0x38bdf8);
+            }
             break;
           }
         }
@@ -2052,7 +2478,8 @@ export class StarFoxEngine {
 
     if (this.state.shield <= 0) {
       this.state.isGameOver = true;
-      this.spawnExplosionParticles(this.shipGroup.position, 50);
+      this.spawnExplosionFX(this.shipGroup.position, 42, 0xef4444);
+      this.spawnExplosionParticles(this.shipGroup.position, 50, 0xff5500);
       starFoxAudio.playExplosion();
     }
     this.notifyState();
@@ -2121,6 +2548,9 @@ export class StarFoxEngine {
     this.shipVelY = 0;
     this.shieldActiveTimer = 0;
     this.collisionGraceTimer = 0;
+    this.comboTimer = 0;
+    this.killTextTimer = 0;
+    this.hitMarkerTimer = 0;
     this.state = {
       shield: 100,
       maxShield: 100,
@@ -2139,6 +2569,8 @@ export class StarFoxEngine {
       isMissionComplete: false,
       isGameOver: false,
       shieldActive: false,
+      combo: 1,
+      lastKillText: null,
     };
     this.dialogueEvents.forEach((d) => (d.triggered = false));
     this.archesAndRings.forEach((r) => {

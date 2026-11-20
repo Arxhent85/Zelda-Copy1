@@ -129,9 +129,9 @@ export class SkyAndLightingManager {
 
           skyColor += uSunColor * (sunDisc * 2.0 + sunGlow);
 
-          // Star dots at night
+          // Star dots at night (mobile-safe bounded hash)
           if (uTimeOfDay < 6.0 || uTimeOfDay > 18.0) {
-            float starNoise = fract(sin(dot(dir.xz * 120.0, vec2(12.9898, 78.233))) * 43758.5453);
+            float starNoise = fract(sin(dot(dir.xz * 37.0, vec2(12.989, 78.233))) * 437.585);
             if (starNoise > 0.992 && height > 0.2) {
               skyColor += vec3(0.9, 0.95, 1.0) * (starNoise - 0.992) * 80.0;
             }

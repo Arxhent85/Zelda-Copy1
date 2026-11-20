@@ -13,7 +13,7 @@ const isMobile = typeof window !== 'undefined' && (
 
 export class TerrainManager {
   public static WORLD_SIZE = 800; // 800m x 800m open world terrain
-  public static SEGMENTS = isMobile ? 120 : 200; // Adaptive grid resolution for mobile performance
+  public static SEGMENTS = isMobile ? 160 : 220; // Crisp, smooth mountain ridges on mobile & desktop
   public static WATER_LEVEL = 1.5;
 
   public terrainMesh: THREE.Mesh | null = null;
@@ -22,7 +22,7 @@ export class TerrainManager {
   // Active grid representation for instant, 100% accurate physics height sampling & terraforming
   public static activeHeightGrid: Float32Array | null = null;
   public static customColorGrid: Float32Array | null = null;
-  public static gridResolution: number = isMobile ? 120 : 200;
+  public static gridResolution: number = isMobile ? 160 : 220;
   public static halfSize: number = 400;
 
   constructor() {}
@@ -160,13 +160,15 @@ export class TerrainManager {
     const colors = new Float32Array(count * 3);
     const color = new THREE.Color();
 
-    const cSand = new THREE.Color('#e5d3b3');
-    const cPlainsGreen = new THREE.Color('#52a446');
-    const cEmeraldValley = new THREE.Color('#65be54');
-    const cForestMoss = new THREE.Color('#3a7532');
-    const cRockSlate = new THREE.Color('#64748b');
-    const cSnowIce = new THREE.Color('#dbeafe');
-    const cSnowPure = new THREE.Color('#fcfdff');
+    const cSand = new THREE.Color('#ead7b7');
+    const cPlainsGreen = new THREE.Color('#4ea843');
+    const cEmeraldValley = new THREE.Color('#68c456');
+    const cForestMoss = new THREE.Color('#3b7a34');
+    const cRockSlate = new THREE.Color('#748497');
+    const cSnowIce = new THREE.Color('#d8ecff');
+    const cSnowPure = new THREE.Color('#ffffff');
+    const tmpSlopeCol = new THREE.Color();
+    const tmpBiomeCol = new THREE.Color();
 
     for (let i = 0; i < count; i++) {
       const vx = posAttr.getX(i);
@@ -177,42 +179,33 @@ export class TerrainManager {
 
       const normal = TerrainManager.getTerrainNormal(vx, vz);
       const slope = 1.0 - normal.y; // 0 = flat, 1 = vertical cliff
+      const detailVar = (noise2DDetail(vx * 0.05, vz * 0.05) + 1.0) * 0.5;
 
-      // Biome color blending logic with Directional Snow Accumulation (Snowflow Shader effect)
-      if (vy < TerrainManager.WATER_LEVEL + 1.2) {
-        // Sand / Shoreline
-        color.copy(cSand).lerp(cPlainsGreen, Math.max(0, (vy - TerrainManager.WATER_LEVEL) / 1.2));
-      } else if (slope > 0.48) {
-        // Steep Cliff Rocks
-        color.copy(cRockSlate);
-        // High steep cliffs get subtle ice frosting
-        if (vy > 25.0) color.lerp(cSnowPure, Math.min(1.0, (vy - 25.0) / 20.0) * 0.35);
-      } else if (vy > 25.0) {
-        // Directional Snowflow: Upward flat and gentle mountain slopes collect thick, pristine snow
-        const snowDepth = Math.min(1.0, (vy - 25.0) / 10.0);
-        const uprightFactor = Math.pow(Math.max(0, normal.y), 1.5);
-        
-        if (uprightFactor > 0.35) {
-          color.copy(cSnowIce).lerp(cSnowPure, snowDepth * uprightFactor);
-        } else {
-          color.copy(cRockSlate).lerp(cSnowIce, snowDepth * 0.5);
-        }
-      } else if (vy > 18.0) {
-        // Alpine Transition Zone: Patchy snow drifts on grass & rocks
-        const alpineFactor = (vy - 18.0) / 7.0;
-        const noiseVar = (noise2DDetail(vx * 0.08, vz * 0.08) + 1.0) * 0.5;
-        const uprightFactor = Math.max(0, normal.y);
-        
-        if (noiseVar + alpineFactor * 0.8 > 0.72 && uprightFactor > 0.5) {
-          color.copy(cSnowIce).lerp(cSnowPure, 0.7);
-        } else {
-          color.copy(cForestMoss).lerp(cRockSlate, alpineFactor * 0.4);
-        }
-      } else {
-        // Lush Emerald Plains Valley
-        const detailVar = (noise2DDetail(vx * 0.05, vz * 0.05) + 1.0) * 0.5;
-        color.copy(cPlainsGreen).lerp(cEmeraldValley, detailVar);
+      // 1. Base valley grass -> alpine forest moss -> high snow transitions (all smoothstep, zero hard triangle edges!)
+      tmpBiomeCol.copy(cPlainsGreen).lerp(cEmeraldValley, detailVar);
+
+      // Shoreline sand blend
+      const shoreT = THREE.MathUtils.smoothstep(vy, TerrainManager.WATER_LEVEL - 0.5, TerrainManager.WATER_LEVEL + 2.2);
+      color.copy(cSand).lerp(tmpBiomeCol, shoreT);
+
+      // Mid-altitude forest moss blend (14m -> 22m)
+      const forestT = THREE.MathUtils.smoothstep(vy, 14.0, 22.0);
+      color.lerp(cForestMoss, forestT * 0.75);
+
+      // Steep cliff rock blend (smooth transition between slope 0.28 and 0.58)
+      const rockSlopeT = THREE.MathUtils.smoothstep(slope, 0.26, 0.56);
+      tmpSlopeCol.copy(cRockSlate);
+      if (vy > 20.0) {
+        tmpSlopeCol.lerp(cSnowIce, THREE.MathUtils.smoothstep(vy, 20.0, 38.0) * 0.45);
       }
+      color.lerp(tmpSlopeCol, rockSlopeT);
+
+      // High-altitude snow cap blend (smooth transition from 19m to 29m, clinging more to flatter peaks)
+      const snowAltT = THREE.MathUtils.smoothstep(vy + detailVar * 3.0, 19.0, 28.5);
+      const snowFlatT = THREE.MathUtils.smoothstep(normal.y, 0.32, 0.72);
+      const snowAmount = snowAltT * (0.42 + 0.58 * snowFlatT);
+      tmpBiomeCol.copy(cSnowIce).lerp(cSnowPure, THREE.MathUtils.smoothstep(vy, 24.0, 38.0));
+      color.lerp(tmpBiomeCol, snowAmount);
 
       colors[i * 3] = color.r;
       colors[i * 3 + 1] = color.g;
@@ -224,49 +217,72 @@ export class TerrainManager {
 
     const material = new THREE.MeshStandardMaterial({
       vertexColors: true,
-      roughness: 0.75,
-      metalness: 0.08,
+      roughness: 0.68,
+      metalness: 0.02,
       flatShading: false,
     });
 
-    // Custom Shader Modification for High-Precision Crystalline Snow Glint & Subsurface Scatter
+    // Per-Pixel World-Space Alpine & Biome Shader (Zero mediump NaN overflow, smooth per-pixel snow/cliff/meadow)
     material.onBeforeCompile = (shader) => {
       shader.uniforms.uTime = { value: 0 };
       this.terrainMaterialShader = shader;
 
+      shader.vertexShader = `
+        varying vec3 vTerrainWorldPos;
+        varying vec3 vTerrainWorldNormal;
+        varying float vTerrainLocalY;
+        ${shader.vertexShader}
+      `.replace(
+        '#include <worldpos_vertex>',
+        `
+        #include <worldpos_vertex>
+        vTerrainLocalY = transformed.y;
+        vTerrainWorldPos = (modelMatrix * vec4(transformed, 1.0)).xyz;
+        vTerrainWorldNormal = normalize(objectNormal);
+        `
+      );
+
       shader.fragmentShader = `
         uniform float uTime;
+        varying vec3 vTerrainWorldPos;
+        varying vec3 vTerrainWorldNormal;
+        varying float vTerrainLocalY;
         ${shader.fragmentShader}
-      `;
-
-      shader.fragmentShader = shader.fragmentShader.replace(
+      `.replace(
         '#include <dithering_fragment>',
         `
         #include <dithering_fragment>
 
-        // Detect snow vertices based on high cyan/white RGB tint
-        if (gl_FragColor.r > 0.72 && gl_FragColor.b > 0.82) {
-          // High-frequency procedural sparkle noise on snow crystals
-          vec3 worldPos = vViewPosition;
-          float pNoise = fract(sin(dot(worldPos.xz * 65.0 + vec2(uTime * 0.05), vec2(12.9898, 78.233))) * 43758.5453);
-          float pSparkle = pow(pNoise, 38.0) * 3.5;
+        vec3 wPos = vTerrainWorldPos;
+        vec3 wNorm = normalize(vTerrainWorldNormal);
+        vec3 sunDir = normalize(vec3(0.45, 0.78, 0.38));
+        float sunDot = clamp(dot(wNorm, sunDir), 0.0, 1.0);
+        float skyHemi = clamp(wNorm.y * 0.5 + 0.5, 0.0, 1.0);
 
-          // Sparkling glint depending on view angle
-          vec3 viewDir = normalize(-vViewPosition);
-          float sparkleFactor = clamp(dot(viewDir, vec3(0.0, 1.0, 0.0)), 0.0, 1.0);
+        // Per-pixel snow cap refinement using local terrain elevation & world normal (eliminates any vertex triangle jaggedness!)
+        float pixelSnowAlt = smoothstep(20.5, 29.0, vTerrainLocalY);
+        float pixelSnowSlope = smoothstep(0.35, 0.75, wNorm.y);
+        float pixelSnowMask = pixelSnowAlt * (0.45 + 0.55 * pixelSnowSlope);
 
-          // Subsurface Scattering tint (soft glacial blue in ambient shadows)
-          gl_FragColor.rgb = mix(gl_FragColor.rgb, vec3(0.85, 0.93, 1.0), 0.12);
-          gl_FragColor.rgb += vec3(0.95, 0.98, 1.0) * pSparkle * sparkleFactor;
-        } else if (gl_FragColor.r > 0.28 && gl_FragColor.r < 0.45 && gl_FragColor.g > 0.32 && gl_FragColor.g < 0.48) {
-          // Rock Cliff Striated Strata (Assassin's Creed / BotW rock formations)
-          float strata = sin(vViewPosition.y * 2.8) * 0.06 + sin(vViewPosition.y * 8.5) * 0.03;
-          gl_FragColor.rgb += vec3(strata);
-        } else if (gl_FragColor.r > 0.72 && gl_FragColor.g > 0.62 && gl_FragColor.b < 0.62) {
-          // Shoreline Sand Ripple Dunes
-          float sandRipple = sin((vViewPosition.x + vViewPosition.z) * 3.5) * 0.035;
-          gl_FragColor.rgb += vec3(sandRipple, sandRipple * 0.85, sandRipple * 0.5);
+        if (pixelSnowMask > 0.02) {
+          // Bright glacial snow with soft sky-blue ambient shadows and warm sunlit peaks (never dark or black!)
+          vec3 snowShadow = vec3(0.76, 0.87, 0.98);
+          vec3 snowLit = vec3(0.99, 0.995, 1.0);
+          vec3 snowCol = mix(snowShadow, snowLit, clamp(sunDot * 0.72 + skyHemi * 0.35, 0.0, 1.0));
+          gl_FragColor.rgb = mix(gl_FragColor.rgb, snowCol, pixelSnowMask * 0.82);
         }
+
+        // True world-space rock cliff strata on steep slopes
+        float cliffMask = (1.0 - smoothstep(0.45, 0.78, wNorm.y)) * (1.0 - pixelSnowMask * 0.6);
+        if (cliffMask > 0.02) {
+          float strata = sin(vTerrainLocalY * 1.6 + wPos.x * 0.06 + wPos.z * 0.06) * 0.035;
+          vec3 rockBase = mix(vec3(0.36, 0.42, 0.50), vec3(0.56, 0.63, 0.71), clamp(sunDot * 0.7 + skyHemi * 0.3, 0.0, 1.0));
+          gl_FragColor.rgb = mix(gl_FragColor.rgb, rockBase + vec3(strata), cliffMask * 0.45);
+        }
+
+        // Minimum ambient sky-fill floor so no mountain ridge can ever turn black in deep shadow
+        vec3 minSkyAmbient = mix(vec3(0.18, 0.26, 0.34), vec3(0.72, 0.84, 0.96), pixelSnowMask);
+        gl_FragColor.rgb = max(gl_FragColor.rgb, minSkyAmbient * 0.55);
         `
       );
     };
