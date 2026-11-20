@@ -160,13 +160,14 @@ export class TerrainManager {
     const colors = new Float32Array(count * 3);
     const color = new THREE.Color();
 
-    const cSand = new THREE.Color('#ead7b7');
-    const cPlainsGreen = new THREE.Color('#4ea843');
-    const cEmeraldValley = new THREE.Color('#68c456');
-    const cForestMoss = new THREE.Color('#3b7a34');
-    const cRockSlate = new THREE.Color('#748497');
-    const cSnowIce = new THREE.Color('#d8ecff');
-    const cSnowPure = new THREE.Color('#ffffff');
+    const cSand = new THREE.Color('#d8b982');
+    const cPlainsGreen = new THREE.Color('#3e8e38');
+    const cEmeraldValley = new THREE.Color('#5cb84d');
+    const cForestMoss = new THREE.Color('#27592a');
+    const cRockDark = new THREE.Color('#3f4957');
+    const cRockLight = new THREE.Color('#667588');
+    const cSnowIce = new THREE.Color('#b8dafc');
+    const cSnowPure = new THREE.Color('#f8fbff');
     const tmpSlopeCol = new THREE.Color();
     const tmpBiomeCol = new THREE.Color();
 
@@ -179,32 +180,32 @@ export class TerrainManager {
 
       const normal = TerrainManager.getTerrainNormal(vx, vz);
       const slope = 1.0 - normal.y; // 0 = flat, 1 = vertical cliff
-      const detailVar = (noise2DDetail(vx * 0.05, vz * 0.05) + 1.0) * 0.5;
+      const detailVar = (noise2DDetail(vx * 0.055, vz * 0.055) + 1.0) * 0.5;
+      const microVar = (noise2DDetail(vx * 0.19, vz * 0.19) + 1.0) * 0.5;
 
-      // 1. Base valley grass -> alpine forest moss -> high snow transitions (all smoothstep, zero hard triangle edges!)
-      tmpBiomeCol.copy(cPlainsGreen).lerp(cEmeraldValley, detailVar);
+      // 1. Rich BotW Emerald Meadow & Warm Savanna Grass Patching (no pale pastel green!)
+      tmpBiomeCol.copy(cPlainsGreen).lerp(cEmeraldValley, detailVar * 0.8 + microVar * 0.2);
 
-      // Shoreline sand blend
-      const shoreT = THREE.MathUtils.smoothstep(vy, TerrainManager.WATER_LEVEL - 0.5, TerrainManager.WATER_LEVEL + 2.2);
+      // Shoreline wet golden beach blend
+      const shoreT = THREE.MathUtils.smoothstep(vy, TerrainManager.WATER_LEVEL - 0.6, TerrainManager.WATER_LEVEL + 2.0);
       color.copy(cSand).lerp(tmpBiomeCol, shoreT);
 
-      // Mid-altitude forest moss blend (14m -> 22m)
-      const forestT = THREE.MathUtils.smoothstep(vy, 14.0, 22.0);
-      color.lerp(cForestMoss, forestT * 0.75);
+      // Mid-altitude alpine pine forest floor (12m -> 24m)
+      const forestT = THREE.MathUtils.smoothstep(vy + detailVar * 3.0, 12.0, 24.0);
+      color.lerp(cForestMoss, forestT * 0.72);
 
-      // Steep cliff rock blend (smooth transition between slope 0.28 and 0.58)
-      const rockSlopeT = THREE.MathUtils.smoothstep(slope, 0.26, 0.56);
-      tmpSlopeCol.copy(cRockSlate);
-      if (vy > 20.0) {
-        tmpSlopeCol.lerp(cSnowIce, THREE.MathUtils.smoothstep(vy, 20.0, 38.0) * 0.45);
-      }
-      color.lerp(tmpSlopeCol, rockSlopeT);
+      // Rugged Rocky Cliffs & Ridges (lower slope threshold so hillsides look sculpted & geological!)
+      const rockSlopeT = THREE.MathUtils.smoothstep(slope + microVar * 0.08, 0.18, 0.44);
+      const highRockT = THREE.MathUtils.smoothstep(vy + detailVar * 4.0, 22.0, 34.0);
+      const rockMask = Math.max(rockSlopeT, highRockT * 0.82);
+      tmpSlopeCol.copy(cRockDark).lerp(cRockLight, detailVar * 0.65 + normal.y * 0.25);
+      color.lerp(tmpSlopeCol, rockMask);
 
-      // High-altitude snow cap blend (smooth transition from 19m to 29m, clinging more to flatter peaks)
-      const snowAltT = THREE.MathUtils.smoothstep(vy + detailVar * 3.0, 19.0, 28.5);
-      const snowFlatT = THREE.MathUtils.smoothstep(normal.y, 0.32, 0.72);
-      const snowAmount = snowAltT * (0.42 + 0.58 * snowFlatT);
-      tmpBiomeCol.copy(cSnowIce).lerp(cSnowPure, THREE.MathUtils.smoothstep(vy, 24.0, 38.0));
+      // True High-Altitude Glacial Snow Caps ONLY on tall summits (vy > 31m)
+      const snowAltT = THREE.MathUtils.smoothstep(vy + detailVar * 4.5, 30.5, 40.0);
+      const snowFlatT = THREE.MathUtils.smoothstep(normal.y, 0.42, 0.78);
+      const snowAmount = snowAltT * (0.28 + 0.72 * snowFlatT);
+      tmpBiomeCol.copy(cSnowIce).lerp(cSnowPure, THREE.MathUtils.smoothstep(vy, 34.0, 44.0));
       color.lerp(tmpBiomeCol, snowAmount);
 
       colors[i * 3] = color.r;
@@ -217,12 +218,12 @@ export class TerrainManager {
 
     const material = new THREE.MeshStandardMaterial({
       vertexColors: true,
-      roughness: 0.68,
+      roughness: 0.88,
       metalness: 0.02,
       flatShading: false,
     });
 
-    // Per-Pixel World-Space Alpine & Biome Shader (Zero mediump NaN overflow, smooth per-pixel snow/cliff/meadow)
+    // High-Contrast AAA Stylized Biome Shader (Crisp sunlit ridges vs cool teal/indigo shadows, textured micro-relief!)
     material.onBeforeCompile = (shader) => {
       shader.uniforms.uTime = { value: 0 };
       this.terrainMaterialShader = shader;
@@ -255,34 +256,49 @@ export class TerrainManager {
 
         vec3 wPos = vTerrainWorldPos;
         vec3 wNorm = normalize(vTerrainWorldNormal);
-        vec3 sunDir = normalize(vec3(0.45, 0.78, 0.38));
+        vec3 sunDir = normalize(vec3(0.55, 0.72, 0.42));
         float sunDot = clamp(dot(wNorm, sunDir), 0.0, 1.0);
-        float skyHemi = clamp(wNorm.y * 0.5 + 0.5, 0.0, 1.0);
+        float ridgeAngle = 1.0 - clamp(wNorm.y, 0.0, 1.0);
 
-        // Per-pixel snow cap refinement using local terrain elevation & world normal (eliminates any vertex triangle jaggedness!)
-        float pixelSnowAlt = smoothstep(20.5, 29.0, vTerrainLocalY);
-        float pixelSnowSlope = smoothstep(0.35, 0.75, wNorm.y);
-        float pixelSnowMask = pixelSnowAlt * (0.45 + 0.55 * pixelSnowSlope);
+        // Multi-scale bounded procedural micro-detail so hills never look plastic or airbrushed!
+        float macroPat = sin(wPos.x * 0.045 + cos(wPos.z * 0.038) * 1.4) * sin(wPos.z * 0.045);
+        float finePat = sin(wPos.x * 0.24) * cos(wPos.z * 0.24) * 0.5 + sin((wPos.x + wPos.z) * 0.55) * 0.5;
+
+        // 1. High-altitude alpine snow ONLY on lofty peaks (> 31.5m local), keeping crisp shadow contrast
+        float pixelSnowAlt = smoothstep(31.5, 41.0, vTerrainLocalY + macroPat * 2.5);
+        float pixelSnowSlope = smoothstep(0.45, 0.78, wNorm.y);
+        float pixelSnowMask = pixelSnowAlt * (0.25 + 0.75 * pixelSnowSlope);
 
         if (pixelSnowMask > 0.02) {
-          // Bright glacial snow with soft sky-blue ambient shadows and warm sunlit peaks (never dark or black!)
-          vec3 snowShadow = vec3(0.76, 0.87, 0.98);
-          vec3 snowLit = vec3(0.99, 0.995, 1.0);
-          vec3 snowCol = mix(snowShadow, snowLit, clamp(sunDot * 0.72 + skyHemi * 0.35, 0.0, 1.0));
-          gl_FragColor.rgb = mix(gl_FragColor.rgb, snowCol, pixelSnowMask * 0.82);
+          vec3 snowShadow = vec3(0.36, 0.52, 0.74); // Cool crisp alpine shadow!
+          vec3 snowSun = vec3(1.0, 0.98, 0.94);     // Warm sunlit crest!
+          float crispLit = smoothstep(0.18, 0.78, sunDot);
+          vec3 snowCol = mix(snowShadow, snowSun, crispLit);
+          snowCol += vec3(finePat * 0.025);
+          gl_FragColor.rgb = mix(gl_FragColor.rgb, snowCol, pixelSnowMask * 0.85);
         }
 
-        // True world-space rock cliff strata on steep slopes
-        float cliffMask = (1.0 - smoothstep(0.45, 0.78, wNorm.y)) * (1.0 - pixelSnowMask * 0.6);
+        // 2. Sculpted World-Space Cliff Strata & Granite Cracks on slopes (high geological crispness!)
+        float cliffMask = smoothstep(0.18, 0.48, ridgeAngle) * (1.0 - pixelSnowMask * 0.75);
         if (cliffMask > 0.02) {
-          float strata = sin(vTerrainLocalY * 1.6 + wPos.x * 0.06 + wPos.z * 0.06) * 0.035;
-          vec3 rockBase = mix(vec3(0.36, 0.42, 0.50), vec3(0.56, 0.63, 0.71), clamp(sunDot * 0.7 + skyHemi * 0.3, 0.0, 1.0));
-          gl_FragColor.rgb = mix(gl_FragColor.rgb, rockBase + vec3(strata), cliffMask * 0.45);
+          float strataBand = sin(vTerrainLocalY * 1.45 + macroPat * 1.8) * 0.065
+                           + sin(vTerrainLocalY * 3.8 + finePat * 1.2) * 0.035;
+          vec3 rockShadow = vec3(0.18, 0.22, 0.30);
+          vec3 rockLit = vec3(0.56, 0.62, 0.68);
+          vec3 rockTone = mix(rockShadow, rockLit, smoothstep(0.12, 0.85, sunDot)) + vec3(strataBand);
+          gl_FragColor.rgb = mix(gl_FragColor.rgb, max(rockTone, vec3(0.08)), cliffMask * 0.72);
         }
 
-        // Minimum ambient sky-fill floor so no mountain ridge can ever turn black in deep shadow
-        vec3 minSkyAmbient = mix(vec3(0.18, 0.26, 0.34), vec3(0.72, 0.84, 0.96), pixelSnowMask);
-        gl_FragColor.rgb = max(gl_FragColor.rgb, minSkyAmbient * 0.55);
+        // 3. Meadow Grass Texture & Sunlight Contrast in valleys
+        if (cliffMask < 0.5 && pixelSnowMask < 0.25 && vTerrainLocalY > 2.2) {
+          float grassGrain = macroPat * 0.045 + finePat * 0.035;
+          gl_FragColor.rgb += vec3(grassGrain * 0.6, grassGrain * 1.05, grassGrain * 0.3);
+        }
+
+        // 4. Crisp Sun-vs-Shadow Micro-Contrast Boost (rich dark shadow valleys vs warm golden highlights)
+        float shadowContrast = mix(0.76, 1.12, smoothstep(0.1, 0.85, sunDot));
+        gl_FragColor.rgb *= shadowContrast;
+        gl_FragColor.rgb = mix(gl_FragColor.rgb, gl_FragColor.rgb * vec3(0.84, 0.90, 1.08), (1.0 - sunDot) * 0.22);
         `
       );
     };

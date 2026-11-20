@@ -28,10 +28,11 @@ interface StarFoxGameProps {
 }
 
 export const StarFoxGame: React.FC<StarFoxGameProps> = ({ onBackToMenu }) => {
+  const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const engineRef = useRef<StarFoxEngine | null>(null);
 
-  // 60 FPS Reticle DOM refs (no React re-render per frame!)
+  // 60 FPS Reticle, Target Diamonds & Damage Flash DOM refs (zero React re-render overhead!)
   const reticleFarRef = useRef<HTMLDivElement>(null);
   const reticleFarBoxRef = useRef<HTMLDivElement>(null);
   const reticleFarDotRef = useRef<HTMLDivElement>(null);
@@ -40,6 +41,10 @@ export const StarFoxGame: React.FC<StarFoxGameProps> = ({ onBackToMenu }) => {
   const reticleNearRef = useRef<HTMLDivElement>(null);
   const reticleNearRingRef = useRef<HTMLDivElement>(null);
   const tiltDotRef = useRef<HTMLDivElement>(null);
+  const damageFlashRef = useRef<HTMLDivElement>(null);
+  const targetRefs = useRef<Array<HTMLDivElement | null>>([null, null, null, null, null]);
+  const targetBoxRefs = useRef<Array<HTMLDivElement | null>>([null, null, null, null, null]);
+  const targetHpRefs = useRef<Array<HTMLDivElement | null>>([null, null, null, null, null]);
 
   const [gameState, setGameState] = useState<StarFoxState>({
     shield: 100,
@@ -515,6 +520,45 @@ export const StarFoxGame: React.FC<StarFoxGameProps> = ({ onBackToMenu }) => {
       }
     };
 
+    engine.onTargetsUpdate = (targets) => {
+      for (let i = 0; i < 5; i++) {
+        const el = targetRefs.current[i];
+        const box = targetBoxRefs.current[i];
+        const hpEl = targetHpRefs.current[i];
+        if (!el) continue;
+        const t = targets[i];
+        if (!t) {
+          el.style.display = 'none';
+          continue;
+        }
+        el.style.display = 'block';
+        el.style.left = `${t.x.toFixed(2)}%`;
+        el.style.top = `${t.y.toFixed(2)}%`;
+        if (box) {
+          box.className = t.isLocked
+            ? 'w-8 h-8 border-2 border-amber-400 rotate-45 shadow-[0_0_12px_rgba(251,191,36,0.9)]'
+            : t.isPriority
+            ? 'w-8 h-8 border-2 border-rose-500 rotate-45 shadow-[0_0_10px_rgba(244,63,94,0.8)]'
+            : 'w-6 h-6 border border-rose-400/85 rotate-45 shadow-[0_0_6px_rgba(251,113,133,0.65)]';
+        }
+        if (hpEl) {
+          hpEl.style.width = `${Math.max(8, Math.round(t.hpRatio * 100))}%`;
+          hpEl.style.display = t.hpRatio < 0.99 ? 'block' : 'none';
+        }
+      }
+    };
+
+    let damageTimeout: number | null = null;
+    engine.onDamageFlash = () => {
+      if (damageFlashRef.current) {
+        damageFlashRef.current.style.opacity = '1';
+        if (damageTimeout) window.clearTimeout(damageTimeout);
+        damageTimeout = window.setTimeout(() => {
+          if (damageFlashRef.current) damageFlashRef.current.style.opacity = '0';
+        }, 220);
+      }
+    };
+
     const handleFirstInteraction = () => {
       starFoxAudio.init();
       starFoxAudio.resume();
@@ -530,11 +574,20 @@ export const StarFoxGame: React.FC<StarFoxGameProps> = ({ onBackToMenu }) => {
     engine.start();
 
     const handleResize = () => {
-      if (canvasRef.current && engineRef.current) {
-        engineRef.current.resize(canvasRef.current.clientWidth, canvasRef.current.clientHeight);
+      const host = containerRef.current || canvasRef.current;
+      if (host && engineRef.current) {
+        engineRef.current.resize(host.clientWidth, host.clientHeight);
       }
     };
     window.addEventListener('resize', handleResize);
+    window.addEventListener('orientationchange', handleResize);
+
+    let resizeObserver: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== 'undefined' && containerRef.current) {
+      resizeObserver = new ResizeObserver(() => handleResize());
+      resizeObserver.observe(containerRef.current);
+    }
+    handleResize();
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (!engineRef.current) return;
@@ -612,6 +665,9 @@ export const StarFoxGame: React.FC<StarFoxGameProps> = ({ onBackToMenu }) => {
       window.removeEventListener('mousedown', handleMouseDown);
       window.removeEventListener('mouseup', handleMouseUp);
       window.removeEventListener('resize', handleResize);
+      window.removeEventListener('orientationchange', handleResize);
+      if (resizeObserver) resizeObserver.disconnect();
+      if (damageTimeout) window.clearTimeout(damageTimeout);
       engine.dispose();
     };
   }, [onBackToMenu]);
@@ -712,7 +768,8 @@ export const StarFoxGame: React.FC<StarFoxGameProps> = ({ onBackToMenu }) => {
 
   return (
     <div
-      className="relative w-screen h-screen overflow-hidden select-none bg-slate-950 font-sans touch-none"
+      ref={containerRef}
+      className="fixed inset-0 w-full h-full overflow-hidden select-none bg-slate-950 font-sans touch-none"
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
@@ -720,6 +777,41 @@ export const StarFoxGame: React.FC<StarFoxGameProps> = ({ onBackToMenu }) => {
     >
       {/* 3D WebGL Canvas */}
       <canvas ref={canvasRef} className="w-full h-full block cursor-crosshair touch-none" onContextMenu={(e) => e.preventDefault()} />
+
+      {/* Shield / Hull Impact Edge Vignette Flash */}
+      <div
+        ref={damageFlashRef}
+        style={{ opacity: 0 }}
+        className="fixed inset-0 pointer-events-none z-20 transition-opacity duration-200 shadow-[inset_0_0_95px_rgba(239,68,68,0.85)]"
+      />
+
+      {/* 5 Pre-Allocated 60 FPS Tactical Enemy Target Brackets (Zero React Churn!) */}
+      {[0, 1, 2, 3, 4].map((idx) => (
+        <div
+          key={idx}
+          ref={(el) => {
+            targetRefs.current[idx] = el;
+          }}
+          style={{ display: 'none', left: '50%', top: '50%' }}
+          className="fixed pointer-events-none z-10 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center gap-1"
+        >
+          <div
+            ref={(el) => {
+              targetBoxRefs.current[idx] = el;
+            }}
+            className="w-6 h-6 border border-rose-400/85 rotate-45"
+          />
+          <div className="w-7 h-1 bg-slate-950/75 rounded-full overflow-hidden">
+            <div
+              ref={(el) => {
+                targetHpRefs.current[idx] = el;
+              }}
+              className="h-full bg-rose-400"
+              style={{ width: '100%', display: 'none' }}
+            />
+          </div>
+        </div>
+      ))}
 
       {/* Ultra-slim 2px Mission Progress Line at very top edge */}
       <div className="absolute top-0 left-0 right-0 h-[2px] bg-slate-900/40 pointer-events-none z-30">
